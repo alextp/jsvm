@@ -1,0 +1,34 @@
+Hi everyone,
+
+Here's assignment 1.
+You will do this in teams of 2 or 3 (please send me a note ASAP indicating your team preferences).
+It is due 11:59pm on 10/16.
+
+The goal of this assignment is to familiarize you with a particular instruction set,
+namely the Java virtual machine, and a dynamic language, namely JavaScript.
+
+You will implement a simple interpreter for the Java bytecodes.
+
+A follow-on assignment will involve a compiler-like transformation to this code,
+so please plan your project accordingly.
+
+I would first parse everything into an appropriate internal representation and then
+run your interpreter on that. It would also make a lot of sense to break out the
+various operations into classes, organized by functionality.
+
+Note that JavaScript has no built-in support for threads; for this assignment, you may
+treat synchronization operations as NOPs.
+
+You may, as a class, discuss all details of this assignment -- and I encourage you to do so
+via this mail alias. However, no code can be shared across teams. All assignments will
+be submitted via a script which will automatically do plagiarism detection, so plan accordingly.
+
+JVM info:
+http://en.wikipedia.org/wiki/Java_Virtual_Machine
+http://java.sun.com/docs/books/vmspec/
+
+JavaScript info:
+http://en.wikipedia.org/wiki/JavaScript
+
+Videos on JavaScript:
+http://yuiblog.com/crockford/
