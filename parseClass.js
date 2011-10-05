@@ -152,7 +152,7 @@ function readMethods(f, mcount, constants) {
     var ms = []
     for (var i = 0; i < mcount; ++i) {
 	var flags = f.readShort()
-	var name = constants[f.readShort()][1]
+	var mname = constants[f.readShort()][1]
 	var type = constants[f.readShort()][1]
 	var acount = f.readShort()
 	var code = null
@@ -195,7 +195,7 @@ function readMethods(f, mcount, constants) {
 	}
 	ms.push({
 	    flags: flags,
-	    name: name,
+	    name: mname,
 	    type: type,
 	    nlocals: nlocals,
 	    code: code,
@@ -236,6 +236,13 @@ function parseClass(fname) {
     var mcount = f.readShort()
     var methods = readMethods(f, mcount, constants)
     ignoreAttributes(f)
+    java.lang.System.out.println("Read class: "+ths+" super "+supr+" ifaces "+interfaces)
+    for (var f=0; f < fields.length; ++f) {
+	java.lang.System.out.println("  field: `"+fields[f]["name"]+"` type: `"+fields[f].descr+"`")
+    }
+    for (var m=0; m < methods.length; ++m) {
+	java.lang.System.out.println(" method: `"+methods[m].name+"` type: `"+methods[m].type+"`")
+    }
     return {
 	name: ths,
 	superName: supr,
@@ -245,8 +252,15 @@ function parseClass(fname) {
     }
 }
 
+function runClass(cls) {
+    // to run a class we need to find the public method Main with type
+    //   ([Ljava/lang/String;)V
+    // and run it
+}
+
+
 try {
-    parseClass("Model.class")
+    parseClass("parseClass.class")
 } catch(e) {
     if(e.rhinoException != null)
     {
