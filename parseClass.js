@@ -14,14 +14,12 @@ var CONSTANT_Utf8 = 1
 
 
 
-function AssertException(message) { this.message = message; }
-AssertException.prototype.toString = function () {
-    return 'AssertException: ' + this.message;
-}
 
 function assert(exp, message) {
     if (!exp) {
-	throw new AssertException(message);
+	var f = new java.lang.Throwable()
+	f.printStackTrace()
+	throw "help!"
     }
 }
 
@@ -29,15 +27,15 @@ function assert(exp, message) {
 function readConstant(f) {
     var tag = f.read()
     if (tag == CONSTANT_Class) {
-	return ["class", readShort(f)]
+	return ["class", f.readShort()]
     } else if (tag == CONSTANT_Fieldref) {
-	return ["fref", readShort(f), readShort(f)]
+	return ["fref", f.readShort(), f.readShort()]
     } else if (tag == CONSTANT_Methodref) {
-	return ["mref", readShort(f), readShort(f)]
+	return ["mref", f.readShort(), f.readShort()]
     } else if (tag == CONSTANT_InterfaceMethodref) {
-	return ["imref", readShort(f), readShort(f)]
+	return ["imref", f.readShort(), f.readShort()]
     } else if (tag == CONSTANT_String) {
-	return ["string", readShort(f)]
+	return ["string", f.readShort()]
     } else if (tag == CONSTANT_Integer) {
 	return ["int", f.readInt()] 
     } else if (tag == CONSTANT_Float) {
@@ -56,7 +54,7 @@ function readConstant(f) {
 }
 
 function validateConstants(clist) {
-    for (var i = 1; i < clists.length; ++i) {
+    for (var i = 1; i < clist.length; ++i) {
 	var tag = clist[i][0]
 	if (tag == "class") {
 	    assert(clist[clist[i][1]][0] == "utf")
@@ -64,7 +62,7 @@ function validateConstants(clist) {
 	} else if ((tag == "fref") || (tag == "mref") || (tag == "imref")) {
 	    assert(clist[clist[i][1]][0] == "class")
 	    clist[i][1] = clist[clist[i][1]][1]
-	    assert(clist[clust[i][2]][0] == "nt")
+	    assert(clist[clist[i][2]][0] == "nt")
 	} else if (tag == "string") {
 	    assert(clist[clist[i][1]][0] =="utf")
 	    clist[i][1] = clist[clist[i][1]][1]
@@ -77,10 +75,10 @@ function validateConstants(clist) {
     }
     for (var i = 1; i < clist.length; ++i) {
 	var tag = clist[i][0]
-	if (tag == "fref")
-	    validateTypeName(clist[i][2])
-	else if ((tag == "mref") || (tag == "imref"))
-	    validateMethodName(clist[i][2])
+	//if (tag == "fref")
+	//    validateTypeName(clist[i][1])
+	//else if ((tag == "mref") || (tag == "imref"))
+	//    validateMethodName(clist[i][1])  // TODO: fix this validation
     }
 }
 
@@ -101,8 +99,13 @@ var ACC_TRANSIENT = 0x0080 // Declared transient; not written or read by a persi
 function readInterfaces(f, icount, ctable) {
     var ints = []	    
     for(var i = 0; i < icount; ++i)
-	ints.push(ctable(f.readShort()))
+	ints.push(ctable[f.readShort()])
     return ints
+}
+
+function ignoreAttribute(f) {
+    var len = f.readInt() 
+    for (var k = 0; k < len; ++k) f.read()
 }
 
 function readFields(f, fcount, constants) {
@@ -121,8 +124,7 @@ function readFields(f, fcount, constants) {
 		isconst = true;
 		cval = constants[f.readShort()]
 	    } else {
-		var len = f.readInt() // we only need to deal with constantvalue attributes
-		for (var k = 0; k < len; ++k) f.read()
+		ignoreAttribute(f) // we only need to deal with constantvalue attributes
 	    }
 	}
 	fields.push({
@@ -130,11 +132,20 @@ function readFields(f, fcount, constants) {
 	    name: name, // the field name
 	    descr: descr, // the field type
 	    iscont: isconst, // whether we have a constant
-	    cval: cval, // whether 
+	    cval: cval, // the constant value
 	    
 	})
     }
     return fields
+}
+
+function ignoreAttributes(f) {
+    var acount = f.readShort()
+    for(var k = 0; k < acount; ++k) {
+	f.readShort()
+	//f.readInt()
+	ignoreAttribute(f)
+    }
 }
 
 function readMethods(f, mcount, constants) {
@@ -146,36 +157,70 @@ function readMethods(f, mcount, constants) {
 	var acount = f.readShort()
 	var code = null
 	var nlocals = null
-	var exceptions = null
+	var synthetic = false
+	var deprecated = false
+	var handtable = []
+	var exceptions = []
 	for (var j = 0; j < acount; ++j) {
 	    var name = constants[f.readShort()][1]
 	    if (name == "Code") {
-		f.getInt() // ignore length
-		g.getShort() // ignore max stack depth
-		nlocals = f.getShort()
-		var codel = f.getInt()
+		f.readInt() // ignore length
+		f.readShort() // ignore max stack depth
+		nlocals = f.readShort()
+		var codel = f.readInt()
 		var bcode = java.lang.reflect.Array.newInstance(java.lang.Byte.TYPE, codel)
 		f.read(bcode)
 		core = bcode
-		// TODO: ignore attributes here
-		
+		var elen = f.readShort()
+		for (var k=0; k < elen; ++k) {
+		    handtable.push({
+			start: f.readShort(),
+			end: f.readShort(),
+			handler: f.readShort(),
+			type: constants[f.readShort()][1]
+		    })
+		}
+		ignoreAttributes(f)
 	    } else if (name == "Exceptions") {
-		
-	    }
+		f.reatInt() // ignore length
+		var elen = f.readShort()
+		exceptions.push(constants[f.readShort()][1])
+	    } else if (name == "Synthetic") {
+		synthetic = true
+		f.readInt()
+	    } else if (name == "Deprecated") {
+		deprecated = true
+		f.readInt()
+	    } else ignoreAttribute(f)
 	}
+	ms.push({
+	    flags: flags,
+	    name: name,
+	    type: type,
+	    nlocals: nlocals,
+	    code: code,
+	    synthetic: synthetic,
+	    deprecated: deprecated,
+	    handtable: handtable,
+	    exceptions: exceptions
+	})
     }
+    return ms
 }
 
 function parseClass(fname) {
     var f = new java.io.RandomAccessFile(fname, "r")
-    assert(f.readInt() == 0xcafebabe)
+    var cf = f.readUnsignedShort()
+    assert(cf == 0xcafe)
+    cf = f.readUnsignedShort()
+    assert(cf == 0xbabe)
     f.readInt() // ignore the version of the format
     var cpcount = f.readShort()
     var constants = [0] // to make indexing start at 1
     for(var i = 1; i < cpcount; ++i) {
 	constants.push(readConstant(f))
 	var t = constants[constants.length-1]
-	if ((t == "long") || (t == "double")) {
+	if ((t[0] == "long") || (t[0] == "double")) {
 	    constants.push(0)
 	    i += 1 // dealing with the fact that the constant pool count is wrong
 	}
@@ -190,4 +235,26 @@ function parseClass(fname) {
     var fields = readFields(f, fcount, constants)
     var mcount = f.readShort()
     var methods = readMethods(f, mcount, constants)
+    ignoreAttributes(f)
+    return {
+	name: ths,
+	superName: supr,
+	interfaces: interfaces,
+	fields: fields,
+	methods: methods
+    }
+}
+
+try {
+    parseClass("Model.class")
+} catch(e) {
+    if(e.rhinoException != null)
+    {
+        e.rhinoException.printStackTrace();
+    }
+    else if(e.javaException != null)
+    {
+        e. javaException.printStackTrace();
+    }
+
 }
