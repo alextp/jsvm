@@ -98,6 +98,73 @@ var ACC_FINAL = 0x0010 // Declared final; no further assignment after initializa
 var ACC_VOLATILE = 0x0040 // Declared volatile; cannot be cached.
 var ACC_TRANSIENT = 0x0080 // Declared transient; not written or read by a persistent object manager.
 
+function readInterfaces(f, icount, ctable) {
+    var ints = []	    
+    for(var i = 0; i < icount; ++i)
+	ints.push(ctable(f.readShort()))
+    return ints
+}
+
+function readFields(f, fcount, constants) {
+    var fields = []
+    for (var i = 0; i < fcount; ++i) {
+	var flags = f.readShort()
+	var name = constants[f.readShort()][1]
+	var descr = constants[f.readShort()][1]
+	var acount = f.readShort()
+	var isconst = false;
+	var cval = null;
+	for (var j = 0; j < acount; ++j) {
+	    var name = constants[f.readShort()][1]
+	    if (name == "ConstantValue") {
+		f.readLong()
+		isconst = true;
+		cval = constants[f.readShort()]
+	    } else {
+		var len = f.readInt() // we only need to deal with constantvalue attributes
+		for (var k = 0; k < len; ++k) f.read()
+	    }
+	}
+	fields.push({
+	    flags: flags, // the flags, things like protected, public, etc
+	    name: name, // the field name
+	    descr: descr, // the field type
+	    iscont: isconst, // whether we have a constant
+	    cval: cval, // whether 
+	    
+	})
+    }
+    return fields
+}
+
+function readMethods(f, mcount, constants) {
+    var ms = []
+    for (var i = 0; i < mcount; ++i) {
+	var flags = f.readShort()
+	var name = constants[f.readShort()][1]
+	var type = constants[f.readShort()][1]
+	var acount = f.readShort()
+	var code = null
+	var nlocals = null
+	var exceptions = null
+	for (var j = 0; j < acount; ++j) {
+	    var name = constants[f.readShort()][1]
+	    if (name == "Code") {
+		f.getInt() // ignore length
+		g.getShort() // ignore max stack depth
+		nlocals = f.getShort()
+		var codel = f.getInt()
+		var bcode = java.lang.reflect.Array.newInstance(java.lang.Byte.TYPE, codel)
+		f.read(bcode)
+		core = bcode
+		// TODO: ignore attributes here
+		
+	    } else if (name == "Exceptions") {
+		
+	    }
+	}
+    }
+}
 
 function parseClass(fname) {
     var f = new java.io.RandomAccessFile(fname, "r")
@@ -118,16 +185,9 @@ function parseClass(fname) {
     var ths = constants[f.readShort()][1]
     var supr = constants[f.readShort()][1]
     var icount = f.readShort()
-    var interfaces = []
-    for (var i = 0; i < icount; ++i) {
-	var flags = f.readShort()
-	var name = constants[f.readShort()][1]
-	var descr = constants[f.readShort()][1]
-	var acount = f.readShort()
-	var attrs = []
-	for (var j = 0; j < acount; ++j) {
-	    
-	}
-    }
-    
+    var interfaces = readInterfaces(f, icount, constants)
+    var fcount = f.readShort()
+    var fields = readFields(f, fcount, constants)
+    var mcount = f.readShort()
+    var methods = readMethods(f, mcount, constants)
 }
