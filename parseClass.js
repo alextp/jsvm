@@ -252,15 +252,130 @@ function parseClass(fname) {
     }
 }
 
-function runClass(cls) {
+var INST = []
+
+for (var i = 0; i < 256; ++i) {
+    INST[i] = function(code, position, stack, cls, global) { 
+	throw "Did not implement bytecode '"+code[position].toString(16)+"'"
+    }
+}
+
+function iconst(i) { function(c, p, s, cls, g) { s.push(["int", i]) }; return p+1 }
+
+INST[0x02] = iconst(-1)
+INST[0x03] = iconst(0)
+INST[0x04] = iconst(1)
+INST[0x05] = iconst(2)
+INST[0x06] = iconst(3)
+INST[0x07] = iconst(4)
+INST[0x08] = iconst(5)
+
+function istore(i) {
+    function(c, p, s, cls, g) { g.variables[i] = s.pop(); return p+1 }
+}
+
+INST[0x3b] = istore(0)
+INST[0x3c] = istore(1)
+INST[0x3d] = istore(2)
+INST[0x3e] = istore(3)
+
+function iload(i) {
+    function(c, p, s, cls, g) { s.push(g.variables[i]); return p+1 }
+}
+
+INST[0x1a] = iload(0)
+INST[0x1b] = iload(1)
+INST[0x1c] = iload(2)
+INST[0x1d] = iload(3)
+INST[0x15] = function(c,p,s,cls,g) { s.push(g.variables[c[p+1]]); return p+2} // iload
+
+INST[0x10] = function(c,p,s,cls,g) { s.push(["int",c[p+1]]); return p+2} // bipush
+
+function if_cmp(func) {
+    function(c,p,s,cls,g) {
+	var v1 = s.pop();
+	var v2 = s.pop();
+	if (func(v1,v2)) {
+	    return p + ((c[p+1] << 8) + c[p+2]) // make sure this is a relative offset
+	} else {
+	    return p+3
+	}
+    }
+}
+
+INST[0xa5] = if_cmp(function(v1,v2){ v1[1] === v2[1] }) // if_acmpeq
+INST[0xa6] = if_cmp(function(v1,v2){ !(v1[1] === v2[1]) }) // if_acmpne
+INST[0x9f] = if_cmp(function(v1,v2){ v1[1] == v2[1] } ) // if_icmpeq
+INST[0xa0] = if_cmp(function(v1,v2){ !(v1[1] == v2[1]) } ) // if_icmpne
+INST[0xa1] = if_cmp(function(v1,v2){ v1[1] < v2[1] } ) // if_icmplt
+INST[0xa2] = if_cmp(function(v1,v2){ v1[1] >= v2[1] } ) // if_icmpge
+INST[0xa3] = if_cmp(function(v1,v2){ v1[1] > v2[1] } ) // if_icmpgt
+INST[0xa4] = if_cmp(function(v1,v2){ v1[1] <= v2[1] } ) // if_icmple
+
+function if_eq(func) {
+    function(c, p, s, cls, g) {
+	var v = s.pop();
+	if (func(v)) {
+	    return p+((c[p+1] << 8) + c[p+2])
+	} else {
+	    return p+3
+	}
+    }
+}
+
+INST[0x99] = if_eq(function(v) { v[1] == 0 }) // ifeq
+INST[0x9a] = if_eq(function(v) { v[1] != 0 }) // ifne
+INST[0x9b] = if_eq(function(v) { v[1] < 0 }) // iflt
+INST[0x9c] = if_eq(function(v) { v[1] >= 0 }) // ifge
+INST[0x9d] = if_eq(function(v) { v[1] > 0 }) // ifgt
+INST[0x9e] = if_eq(function(v) { v[1] <= 0 }) // ifle
+INST[0xc7] = if_eq(function(v) { v[1] != null }) // ifnonnull
+INST[0xc6] = if_eq(function(v) { v[1] == null}) // ifnull
+
+function iop(func) {
+    function(c, p, s, cls, g) {
+	var v1 = s.pop()
+	var v2 = s.pop()
+	s.push(func(v1, v2))
+	return p+1
+    }
+}
+
+INST[0x68] = iop(function(a,b) { a*b}) // imul
+// TODO: add other integer ops
+
+
+
+function runMethod(method, cls, global) {
+    var stack = []
+    var code = method.code
+    var ip = 0
+    while (1) {
+	var res = INST[code[ip]](code, ip, stack, cls, global)
+	if (res == "return") {
+	    return stack.pop()
+	} else if (res == "throw") {
+	    throw "jvmException" // FIXME: use the handlers
+	} else {
+	    ip = res
+	}
+    }
+}
+
+function runClass(cls, global) {
     // to run a class we need to find the public method Main with type
     //   ([Ljava/lang/String;)V
     // and run it
+    for (var m = 0; m < cls.methods.length; ++m) {
+	if ((m.name == "Main") && (m.type == "([Ljava/lang/String;)V"))
+	    return runMethod(m, cls, global)
+    }
+    assert(1 == 2)
 }
 
 
 try {
-    parseClass("parseClass.class")
+    parseClass("Model.class")
 } catch(e) {
     if(e.rhinoException != null)
     {
