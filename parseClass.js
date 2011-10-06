@@ -13,6 +13,14 @@ var CONSTANT_NameAndType = 12
 var CONSTANT_Utf8 = 1
 
 
+function signed(x) {
+    if ((x >> 15) == 1) {
+	// we actually have a negative number
+	return (1 << 16) - x + 1
+    } else {
+	return x
+    }
+}
 
 
 function assert(exp, message) {
@@ -296,7 +304,7 @@ function if_cmp(func) {
 	var v1 = s.pop();
 	var v2 = s.pop();
 	if (func(v1,v2)) {
-	    return p + ((c[p+1] << 8) + c[p+2]) // make sure this is a relative offset
+	    return p + signed((c[p+1] << 8) + c[p+2])
 	} else {
 	    return p+3
 	}
@@ -316,7 +324,7 @@ function if_eq(func) {
     function(c, p, s, cls, g) {
 	var v = s.pop();
 	if (func(v)) {
-	    return p+((c[p+1] << 8) + c[p+2])
+	    return p+signed((c[p+1] << 8) + c[p+2])
 	} else {
 	    return p+3
 	}
@@ -334,15 +342,38 @@ INST[0xc6] = if_eq(function(v) { v[1] == null}) // ifnull
 
 function iop(func) {
     function(c, p, s, cls, g) {
-	var v1 = s.pop()
-	var v2 = s.pop()
-	s.push(func(v1, v2))
+	var v1[1] = s.pop()
+	var v2[1] = s.pop()
+	s.push([v1[0], func(v1, v2)])
 	return p+1
     }
 }
 
-INST[0x68] = iop(function(a,b) { a*b}) // imul
-// TODO: add other integer ops
+INST[0x61]=INST[0x60]=INST[0x62]=INST[0x63]=iop(function(a,b){a+b})//{ilfd}add
+INST[0x64]=INST[0x65]=INST[0x66]=INST[0x67]=iop(function(a,b){a-b})//{ilfd}sub
+INST[0x68]=INST[0x69]=INST[0x6a]=INST[0x6b]=iop(function(a,b){a*b})//{ilfd}mul
+INST[0x6c]=INST[0x6d]=INST[0x6e]=INST[0x6f]=iop(function(a,b){a/b})//{ilfd}div
+
+INST[0x84] = function(c, p, s, cls, g) {
+    var idx = c[p+1]
+    var val = c[p+2]
+    g.variables[idx] += val
+    return p+3
+}
+
+
+INST[0xa7] = function(c, p, s, cls, g) { // goto
+    var off = signed((c[p+1] << 8) + c[p+2])
+    return off + p
+}
+
+INST[0xb2] = function(c,p,s,cls,g) { // getstatic
+    var idx = (c[p+1] << 8) + c[p+2]
+    var fref = cls.constants[idx]
+    s.push(fref)
+    return p+3
+}
+
 
 
 
