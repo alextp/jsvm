@@ -66,7 +66,7 @@ function validateConstants(clist) {
 	var tag = clist[i][0]
 	if (tag == "class") {
 	    assert(clist[clist[i][1]][0] == "utf")
-	    clist[i][1] = clist[clist[i][1]][1] // directly associating a class with its name
+	    clist[i][1] = clist[clist[i][1]][1]
 	} else if ((tag == "fref") || (tag == "mref") || (tag == "imref")) {
 	    assert(clist[clist[i][1]][0] == "class")
 	    clist[i][1] = clist[clist[i][1]][1]
@@ -90,7 +90,8 @@ function validateConstants(clist) {
     }
 }
 
-var typere = /(\[)*(([BCDFIJSZ])|(L[A-Za-z0-9\/]+;))/  ///sdfsdf
+var typere = /(\[)*(([BCDFIJSZ])|(L[A-Za-z0-9\/]+;))/  
+var typereg = /(\[)*(([BCDFIJSZ])|(L[A-Za-z0-9\/]+;))/g
 var validateTypeName = typere.test
 
 var methodre = /\(((\[)*(([BCDFIJSZ])|(L[A-Za-z0-9\/]+;)))*\)(((\[)*(([BCDFIJSZ])|(L[A-Za-z0-9\/]+;)))|V)/  ///sdfsdf
@@ -103,6 +104,13 @@ var ACC_STATIC = 0x0008 // Declared static.
 var ACC_FINAL = 0x0010 // Declared final; no further assignment after initialization.
 var ACC_VOLATILE = 0x0040 // Declared volatile; cannot be cached.
 var ACC_TRANSIENT = 0x0080 // Declared transient; not written or read by a persistent object manager.
+
+
+var ACC_FINAL = 0x0010 // Declared final; no subclasses allowed.
+var ACC_SUPER = 0x0020 // Treat superclass methods specially when invoked by the invokespecial instruction.
+var ACC_INTERFACE = 0x0200 // Is an interface, not a class.
+var ACC_ABSTRACT = 0x0400 // Declared abstract; may not be instantiated.
+
 
 function readInterfaces(f, icount, ctable) {
     var ints = []	    
@@ -253,6 +261,7 @@ function parseClass(fname) {
     }
     return {
 	name: ths,
+	flags: aflags,
 	superName: supr,
 	interfaces: interfaces,
 	fields: fields,
@@ -268,7 +277,12 @@ for (var i = 0; i < 256; ++i) {
     }
 }
 
-function iconst(i) { function(c, p, s, cls, g) { s.push(["int", i]) }; return p+1 }
+function iconst(i) { 
+    function(c,p, s, cls, g) { 
+	s.push(["int", i]) 
+	return p+1 
+    }
+}
 
 INST[0x02] = iconst(-1)
 INST[0x03] = iconst(0)
@@ -342,8 +356,8 @@ INST[0xc6] = if_eq(function(v) { v[1] == null}) // ifnull
 
 function iop(func) {
     function(c, p, s, cls, g) {
-	var v1[1] = s.pop()
-	var v2[1] = s.pop()
+	var v1 = s.pop()
+	var v2 = s.pop()
 	s.push([v1[0], func(v1, v2)])
 	return p+1
     }
@@ -374,10 +388,97 @@ INST[0xb2] = function(c,p,s,cls,g) { // getstatic
     return p+3
 }
 
+INST[0xbb] = function(c,p,s,cls,g) { // new
+    var idx = (c[p+1] << 8) + c[p+2]
+    var clsname = cls.constants[idx][1]
+    if (g.classes[clsname]) {
+	// this means we know which class it is
+ 	java.lang.System.out.println(" ---- debug ---- creating object "+clsname)
+	var obj = {type: clsname}
+	var newcls = g.classes[clsname]
+	s.push(["obj", {cls: clsname, fields= {}}])
+    } else {
+	// since we haven't loaded this class we fall back to the JVM
+	// classes this is harder than it looks, as JVM classes are
+	// initialized and constructed in one shot. The solution then
+	// is, I believe, to just push now an empty symbol onto the
+	// stack and only create the object when we come to
+	// invokespecial
+	java.lang.System.out.println(" ---- debug ---- loading jvm class "+clsname)
+	s.push(["NEWjvmobj", clsname])
+    }
+}
 
+INST[0x59] = function(c,p,s,cls,g) { // dup
+    var t = s.pop()
+    s.push(t)
+    s.push(t)
+    return p+1
+}
 
+function validateMethodRef(obj, clsname, globals, method) {
+    // Must implement MRO here. The relevant spec (5.4.3.3) is as follows
+    // 1 If C is an interface throw IncompatibleClassChangeError
+    var cls = globals.classes[clsname]
+    var mname = method[1]
+    var mtype = method[2]
+    if (ACC_INTERFACE & cls.flags != 0) throw "IncompatibleClassChangeError"
+    // 2 Look up the referenced method in C and its superclasses
+    //  2.1 If C declares a method with right name and descriptor, success
+    //  2.2 if C has a superclass, recurse step 2 on the superclass C
+    function doStepTwo(cls) {
+	for (var i = 0; i < cls.methods.length; ++i) {
+	    if ((cls.methods[i].name == mname) && (cls.methods[i].type == mtype)) {
+		return [cls, cls.methods[i]]
+	    }
+	}
+	if (cls.supr) return doStepTwo(globals.classes[cls.supr])
+	return null
+    }
+    var success = null
+    var s2 = doStepTwo(cls)
+    if (!s2) {
+	// 3 If any superinterface of C has right name and descriptor, success
+	
+    } else { success = s2 }
+    // 4 fail with NoSuchMethodError
+    if (!success) throw "NoSuchMethodError"
+    
+    // In case of success: 
+    //  1. If D is abstract and C is not, throw AbstractMethodError
+    //  2. if the method is not accessible, throw IllegalAccessError
+    //  3. something to do with classloaders. TODO: figure out if it matters
+    //FIXME: I'm ignoring the whole shebang
 
-function runMethod(method, cls, global) {
+    return success
+}
+
+INST[0xb9] = function(c,p,s,cls,g) { // invokespecial
+    var idx = (c[p+1] << 8) + c[p+2]
+    var m = cls.constants[idx]
+    var mname = m[1]
+    var mtype = m[2]
+    var argst = mtype.match(/(\(.*\))/)[0]
+    var nargs = argst.match(typereg).length-1
+    java.lang.System.out.println(" --- debug --- passing "+nargs+" args")
+    var newg = g.copy()
+    for (var i = nargs; i >= 0; --i) {
+	newg.variables[i] = s.pop()
+    }
+    var o = newg.variables[0]
+    if (o[0] == "obj") {
+	var obj = o[1]
+	var clsname = obj.cls
+	var method = validateMethodRef(obj, clsname, g, m)
+	var ret = runMethod(method[1], method[0], obj, newg)
+	s.push(ret)
+	return
+    } else {
+	// we're in JVM-land
+    }
+}
+
+    function runMethod(method, cls, obj, global) {
     var stack = []
     var code = method.code
     var ip = 0
@@ -406,7 +507,7 @@ function runClass(cls, global) {
 
 
 try {
-    parseClass("Model.class")
+    parseClass("Hello.class")
 } catch(e) {
     if(e.rhinoException != null)
     {
