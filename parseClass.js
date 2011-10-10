@@ -12,6 +12,7 @@ var CONSTANT_Double = 6
 var CONSTANT_NameAndType = 12
 var CONSTANT_Utf8 = 1
 
+var CLASSES = {}
 
 function signed(x) {
     if ((x >> 15) == 1) {
@@ -259,7 +260,7 @@ function parseClass(fname) {
     for (var m=0; m < methods.length; ++m) {
 	java.lang.System.out.println(" method: `"+methods[m].name+"` type: `"+methods[m].type+"`")
     }
-    return {
+    var cls = {
 	name: ths,
 	flags: aflags,
 	superName: supr,
@@ -267,6 +268,8 @@ function parseClass(fname) {
 	fields: fields,
 	methods: methods
     }
+    CLASSES[ths] = cls
+    return cls
 }
 
 var INST = []
@@ -391,11 +394,11 @@ INST[0xb2] = function(c,p,s,cls,g) { // getstatic
 INST[0xbb] = function(c,p,s,cls,g) { // new
     var idx = (c[p+1] << 8) + c[p+2]
     var clsname = cls.constants[idx][1]
-    if (g.classes[clsname]) {
+    if (CLASSES[clsname]) {
 	// this means we know which class it is
  	java.lang.System.out.println(" ---- debug ---- creating object "+clsname)
 	var obj = {type: clsname}
-	var newcls = g.classes[clsname]
+	var newcls = CLASSES[clsname]
 	s.push(["obj", {cls: clsname, fields= {}}])
     } else {
 	// since we haven't loaded this class we fall back to the JVM
@@ -419,7 +422,7 @@ INST[0x59] = function(c,p,s,cls,g) { // dup
 function validateMethodRef(obj, clsname, globals, method) {
     // Must implement MRO here. The relevant spec (5.4.3.3) is as follows
     // 1 If C is an interface throw IncompatibleClassChangeError
-    var cls = globals.classes[clsname]
+    var cls = CLASSES[clsname]
     var mname = method[1]
     var mtype = method[2]
     if (ACC_INTERFACE & cls.flags != 0) throw "IncompatibleClassChangeError"
@@ -432,7 +435,7 @@ function validateMethodRef(obj, clsname, globals, method) {
 		return [cls, cls.methods[i]]
 	    }
 	}
-	if (cls.supr) return doStepTwo(globals.classes[cls.supr])
+	if (cls.supr) return doStepTwo(CLASSES[cls.supr])
 	return null
     }
     var success = null
@@ -470,15 +473,16 @@ INST[0xb9] = function(c,p,s,cls,g) { // invokespecial
 	var obj = o[1]
 	var clsname = obj.cls
 	var method = validateMethodRef(obj, clsname, g, m)
-	var ret = runMethod(method[1], method[0], obj, newg)
+	var ret = runMethod(method[1], method[0], newg)
 	s.push(ret)
 	return
     } else {
 	// we're in JVM-land
+	
     }
 }
 
-    function runMethod(method, cls, obj, global) {
+    function runMethod(method, cls, global) {
     var stack = []
     var code = method.code
     var ip = 0
