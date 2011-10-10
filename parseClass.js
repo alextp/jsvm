@@ -275,13 +275,13 @@ function parseClass(fname) {
 var INST = []
 
 for (var i = 0; i < 256; ++i) {
-    INST[i] = function(code, position, stack, cls, global) { 
+    INST[i] = function(code, position, stack, cls, locals) { 
 	throw "Did not implement bytecode '"+code[position].toString(16)+"'"
     }
 }
 
 function iconst(i) { 
-    function(c,p, s, cls, g) { 
+    function(c,p, s, cls, l) { 
 	s.push(["int", i]) 
 	return p+1 
     }
@@ -296,7 +296,7 @@ INST[0x07] = iconst(4)
 INST[0x08] = iconst(5)
 
 function istore(i) {
-    function(c, p, s, cls, g) { g.variables[i] = s.pop(); return p+1 }
+    function(c, p, s, cls, l) { l[i] = s.pop(); return p+1 }
 }
 
 INST[0x3b] = istore(0)
@@ -305,19 +305,19 @@ INST[0x3d] = istore(2)
 INST[0x3e] = istore(3)
 
 function iload(i) {
-    function(c, p, s, cls, g) { s.push(g.variables[i]); return p+1 }
+    function(c, p, s, cls, l) { s.push(l[i]); return p+1 }
 }
 
 INST[0x1a] = iload(0)
 INST[0x1b] = iload(1)
 INST[0x1c] = iload(2)
 INST[0x1d] = iload(3)
-INST[0x15] = function(c,p,s,cls,g) { s.push(g.variables[c[p+1]]); return p+2} // iload
+INST[0x15] = function(c,p,s,cls,l) { s.push(l[c[p+1]]); return p+2} // iload
 
-INST[0x10] = function(c,p,s,cls,g) { s.push(["int",c[p+1]]); return p+2} // bipush
+INST[0x10] = function(c,p,s,cls,l) { s.push(["int",c[p+1]]); return p+2} // bipush
 
 function if_cmp(func) {
-    function(c,p,s,cls,g) {
+    function(c,p,s,cls,l) {
 	var v1 = s.pop();
 	var v2 = s.pop();
 	if (func(v1,v2)) {
@@ -338,7 +338,7 @@ INST[0xa3] = if_cmp(function(v1,v2){ v1[1] > v2[1] } ) // if_icmpgt
 INST[0xa4] = if_cmp(function(v1,v2){ v1[1] <= v2[1] } ) // if_icmple
 
 function if_eq(func) {
-    function(c, p, s, cls, g) {
+    function(c, p, s, cls, l) {
 	var v = s.pop();
 	if (func(v)) {
 	    return p+signed((c[p+1] << 8) + c[p+2])
@@ -358,7 +358,7 @@ INST[0xc7] = if_eq(function(v) { v[1] != null }) // ifnonnull
 INST[0xc6] = if_eq(function(v) { v[1] == null}) // ifnull
 
 function iop(func) {
-    function(c, p, s, cls, g) {
+    function(c, p, s, cls, l) {
 	var v1 = s.pop()
 	var v2 = s.pop()
 	s.push([v1[0], func(v1, v2)])
@@ -371,27 +371,27 @@ INST[0x64]=INST[0x65]=INST[0x66]=INST[0x67]=iop(function(a,b){a-b})//{ilfd}sub
 INST[0x68]=INST[0x69]=INST[0x6a]=INST[0x6b]=iop(function(a,b){a*b})//{ilfd}mul
 INST[0x6c]=INST[0x6d]=INST[0x6e]=INST[0x6f]=iop(function(a,b){a/b})//{ilfd}div
 
-INST[0x84] = function(c, p, s, cls, g) {
+INST[0x84] = function(c, p, s, cls, l) {
     var idx = c[p+1]
     var val = c[p+2]
-    g.variables[idx] += val
+    l[idx] += val
     return p+3
 }
 
 
-INST[0xa7] = function(c, p, s, cls, g) { // goto
+INST[0xa7] = function(c, p, s, cls, l) { // goto
     var off = signed((c[p+1] << 8) + c[p+2])
     return off + p
 }
 
-INST[0xb2] = function(c,p,s,cls,g) { // getstatic
+INST[0xb2] = function(c,p,s,cls,l) { // getstatic
     var idx = (c[p+1] << 8) + c[p+2]
     var fref = cls.constants[idx]
     s.push(fref)
     return p+3
 }
 
-INST[0xbb] = function(c,p,s,cls,g) { // new
+INST[0xbb] = function(c,p,s,cls,l) { // new
     var idx = (c[p+1] << 8) + c[p+2]
     var clsname = cls.constants[idx][1]
     if (CLASSES[clsname]) {
@@ -412,14 +412,14 @@ INST[0xbb] = function(c,p,s,cls,g) { // new
     }
 }
 
-INST[0x59] = function(c,p,s,cls,g) { // dup
+INST[0x59] = function(c,p,s,cls,l) { // dup
     var t = s.pop()
     s.push(t)
     s.push(t)
     return p+1
 }
 
-function validateMethodRef(obj, clsname, globals, method) {
+function validateMethodRef(obj, clsname, method) {
     // Must implement MRO here. The relevant spec (5.4.3.3) is as follows
     // 1 If C is an interface throw IncompatibleClassChangeError
     var cls = CLASSES[clsname]
@@ -456,7 +456,7 @@ function validateMethodRef(obj, clsname, globals, method) {
     return success
 }
 
-INST[0xb9] = function(c,p,s,cls,g) { // invokespecial
+INST[0xb9] = function(c,p,s,cls,l) { // invokespecial
     var idx = (c[p+1] << 8) + c[p+2]
     var m = cls.constants[idx]
     var mname = m[1]
@@ -464,16 +464,16 @@ INST[0xb9] = function(c,p,s,cls,g) { // invokespecial
     var argst = mtype.match(/(\(.*\))/)[0]
     var nargs = argst.match(typereg).length-1
     java.lang.System.out.println(" --- debug --- passing "+nargs+" args")
-    var newg = g.copy()
+    var newl = {}
     for (var i = nargs; i >= 0; --i) {
-	newg.variables[i] = s.pop()
+	newl[i] = s.pop()
     }
-    var o = newg.variables[0]
+    var o = newl[0]
     if (o[0] == "obj") {
 	var obj = o[1]
 	var clsname = obj.cls
-	var method = validateMethodRef(obj, clsname, g, m)
-	var ret = runMethod(method[1], method[0], newg)
+	var method = validateMethodRef(obj, clsname, m)
+	var ret = runMethod(method[1], method[0], newl)
 	s.push(ret)
 	return
     } else {
@@ -482,12 +482,12 @@ INST[0xb9] = function(c,p,s,cls,g) { // invokespecial
     }
 }
 
-    function runMethod(method, cls, global) {
+function runMethod(method, cls, locals) {
     var stack = []
     var code = method.code
     var ip = 0
     while (1) {
-	var res = INST[code[ip]](code, ip, stack, cls, global)
+	var res = INST[code[ip]](code, ip, stack, cls, locals)
 	if (res == "return") {
 	    return stack.pop()
 	} else if (res == "throw") {
@@ -498,13 +498,13 @@ INST[0xb9] = function(c,p,s,cls,g) { // invokespecial
     }
 }
 
-function runClass(cls, global) {
+function runClass(cls) {
     // to run a class we need to find the public method Main with type
     //   ([Ljava/lang/String;)V
     // and run it
     for (var m = 0; m < cls.methods.length; ++m) {
 	if ((m.name == "Main") && (m.type == "([Ljava/lang/String;)V"))
-	    return runMethod(m, cls, global)
+	    return runMethod(m, cls, {})
     }
     assert(1 == 2)
 }
