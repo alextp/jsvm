@@ -297,21 +297,21 @@ CLASSES["java/lang/Object"] = {
     methods: [
 	makeJsMethod("<init>", "()V", function(m, cls, locals) {
 	    COUNT_OBJ += 1
-	    locals.variables[0].__hash_code = COUNT_OBJ
-	    locals.variables[0].__class = cls
+	    locals[0].__hash_code = COUNT_OBJ
+	    locals[0].__class = cls
 	}),
 	makeJsMethod("hashCode", "()I", function(m, cls, locals) {
-	    return locals.variables[0].__hash_code
+	    return locals[0].__hash_code
 	}),
 	makeJsMethod("equals", "(Ljava/lang/Object;)I", function(m, cls, locals) {
-	    return locals.variables[0].__hash_code == locals.variables[1].__hash_code
+	    return locals[0].__hash_code == locals[1].__hash_code
 	}),
 	makeJsMethod("clone", "()V", function(m, cls, locals) {
-	    return locals.variables[0].copy()
+	    return locals[0].copy()
 	}),
 	makeJsMethod("getClass", "()Ljava/lang/Class;", function(m, cls, l) {cls}),
 	makeJsMethod("toString", "()Ljava/lang/String;", function(m,cls,l){
-	    return cls.name+"@"+locals.variables[0].__hash_code.toStirng(16)
+	    return cls.name+"@"+locals[0].__hash_code.toStirng(16)
 	})
 	//finalize() I can get away with not using finalize
 	// notify, wait, etc, not implementing because of lack of threading
@@ -659,6 +659,7 @@ function runClass(cls) {
 try {
     var b = parseClass("Hello.class")
     var c = parseClass("Test1.class")
+    var d = parseClass("parseClass.class")
     runClass(b)
 } catch(e) {
     if(e.rhinoException != null)
