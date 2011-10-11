@@ -12,12 +12,16 @@ var CONSTANT_Double = 6
 var CONSTANT_NameAndType = 12
 var CONSTANT_Utf8 = 1
 
+function print(x) {
+    java.lang.System.out.println(x)
+}
+
 var CLASSES = {}
 
 function signed(x) {
     if ((x >> 15) == 1) {
 	// we actually have a negative number
-	return (1 << 16) - x + 1
+	return -((1 << 16) - x + 1)
     } else {
 	return x
     }
@@ -172,7 +176,7 @@ function readMethods(f, mcount, constants) {
 	var mname = constants[f.readShort()][1]
 	var type = constants[f.readShort()][1]
 	var acount = f.readShort()
-	var code = null
+	var code = []
 	var nlocals = null
 	var synthetic = false
 	var deprecated = false
@@ -187,7 +191,12 @@ function readMethods(f, mcount, constants) {
 		var codel = f.readInt()
 		var bcode = java.lang.reflect.Array.newInstance(java.lang.Byte.TYPE, codel)
 		f.read(bcode)
-		core = bcode
+		code = []
+		for (var k = 0; k < bcode.length; ++k) {
+		    code.push(bcode[k])
+		    if (code[k] < 0) 
+			code[k] = (1 << 8) + code[k]
+		}
 		var elen = f.readShort()
 		for (var k=0; k < elen; ++k) {
 		    handtable.push({
@@ -216,6 +225,7 @@ function readMethods(f, mcount, constants) {
 	    type: type,
 	    nlocals: nlocals,
 	    code: code,
+	    jsfunc: null,
 	    synthetic: synthetic,
 	    deprecated: deprecated,
 	    handtable: handtable,
@@ -253,12 +263,12 @@ function parseClass(fname) {
     var mcount = f.readShort()
     var methods = readMethods(f, mcount, constants)
     ignoreAttributes(f)
-    java.lang.System.out.println("Read class: "+ths+" super "+supr+" ifaces "+interfaces)
+    print("Read class: "+ths+" super "+supr+" ifaces "+interfaces)
     for (var f=0; f < fields.length; ++f) {
-	java.lang.System.out.println("  field: `"+fields[f]["name"]+"` type: `"+fields[f].descr+"`")
+	print("  field: `"+fields[f]["name"]+"` type: `"+fields[f].descr+"`")
     }
     for (var m=0; m < methods.length; ++m) {
-	java.lang.System.out.println(" method: `"+methods[m].name+"` type: `"+methods[m].type+"`")
+	print(" method: `"+methods[m].name+"` type: `"+methods[m].type+"`")
     }
     var cls = {
 	name: ths,
@@ -272,6 +282,43 @@ function parseClass(fname) {
     return cls
 }
 
+function makeJsMethod(name, type, func) {
+    return {name: name, type:type, jsfunc:func}
+}
+
+var COUNT_OBJ = 0
+
+CLASSES["java/lang/Object"] = {
+    name:"java/lang/Object",
+    flags:0,
+    superName: null,
+    interfaces: [],
+    fields: [],
+    methods: [
+	makeJsMethod("<init>", "()V", function(m, cls, locals) {
+	    COUNT_OBJ += 1
+	    locals.variables[0].__hash_code = COUNT_OBJ
+	    locals.variables[0].__class = cls
+	}),
+	makeJsMethod("hashCode", "()I", function(m, cls, locals) {
+	    return locals.variables[0].__hash_code
+	}),
+	makeJsMethod("equals", "(Ljava/lang/Object;)I", function(m, cls, locals) {
+	    return locals.variables[0].__hash_code == locals.variables[1].__hash_code
+	}),
+	makeJsMethod("clone", "()V", function(m, cls, locals) {
+	    return locals.variables[0].copy()
+	}),
+	makeJsMethod("getClass", "()Ljava/lang/Class;", function(m, cls, l) {cls}),
+	makeJsMethod("toString", "()Ljava/lang/String;", function(m,cls,l){
+	    return cls.name+"@"+locals.variables[0].__hash_code.toStirng(16)
+	})
+	//finalize() I can get away with not using finalize
+	// notify, wait, etc, not implementing because of lack of threading
+	//
+    ]
+}
+
 var INST = []
 
 for (var i = 0; i < 256; ++i) {
@@ -281,7 +328,7 @@ for (var i = 0; i < 256; ++i) {
 }
 
 function iconst(i) { 
-    function(c,p, s, cls, l) { 
+    return function(c,p, s, cls, l) { 
 	s.push(["int", i]) 
 	return p+1 
     }
@@ -296,7 +343,7 @@ INST[0x07] = iconst(4)
 INST[0x08] = iconst(5)
 
 function istore(i) {
-    function(c, p, s, cls, l) { l[i] = s.pop(); return p+1 }
+    return function(c, p, s, cls, l) { l[i] = s.pop(); return p+1 }
 }
 
 INST[0x3b] = istore(0)
@@ -305,7 +352,7 @@ INST[0x3d] = istore(2)
 INST[0x3e] = istore(3)
 
 function iload(i) {
-    function(c, p, s, cls, l) { s.push(l[i]); return p+1 }
+    return function(c, p, s, cls, l) { s.push(l[i]); return p+1 }
 }
 
 INST[0x1a] = iload(0)
@@ -317,28 +364,30 @@ INST[0x15] = function(c,p,s,cls,l) { s.push(l[c[p+1]]); return p+2} // iload
 INST[0x10] = function(c,p,s,cls,l) { s.push(["int",c[p+1]]); return p+2} // bipush
 
 function if_cmp(func) {
-    function(c,p,s,cls,l) {
+    return function(c,p,s,cls,l) {
 	var v1 = s.pop();
 	var v2 = s.pop();
-	if (func(v1,v2)) {
-	    return p + signed((c[p+1] << 8) + c[p+2])
+	if (!func(v1,v2)) {
+	    var off = signed((c[p+1] << 8) + c[p+2])
+	    print(" --- debug -- offset is " + off)
+	    return p + off
 	} else {
 	    return p+3
 	}
     }
 }
 
-INST[0xa5] = if_cmp(function(v1,v2){ v1[1] === v2[1] }) // if_acmpeq
-INST[0xa6] = if_cmp(function(v1,v2){ !(v1[1] === v2[1]) }) // if_acmpne
-INST[0x9f] = if_cmp(function(v1,v2){ v1[1] == v2[1] } ) // if_icmpeq
-INST[0xa0] = if_cmp(function(v1,v2){ !(v1[1] == v2[1]) } ) // if_icmpne
-INST[0xa1] = if_cmp(function(v1,v2){ v1[1] < v2[1] } ) // if_icmplt
-INST[0xa2] = if_cmp(function(v1,v2){ v1[1] >= v2[1] } ) // if_icmpge
-INST[0xa3] = if_cmp(function(v1,v2){ v1[1] > v2[1] } ) // if_icmpgt
-INST[0xa4] = if_cmp(function(v1,v2){ v1[1] <= v2[1] } ) // if_icmple
+INST[0xa5] = if_cmp(function(v1,v2){return  v1[1] === v2[1] }) // if_acmpeq
+INST[0xa6] = if_cmp(function(v1,v2){return  !(v1[1] === v2[1]) }) // if_acmpne
+INST[0x9f] = if_cmp(function(v1,v2){return  v1[1] == v2[1] } ) // if_icmpeq
+INST[0xa0] = if_cmp(function(v1,v2){return  !(v1[1] == v2[1]) } ) // if_icmpne
+INST[0xa1] = if_cmp(function(v1,v2){return  v1[1] < v2[1] } ) // if_icmplt
+INST[0xa2] = if_cmp(function(v1,v2){return  v1[1] >= v2[1] } ) // if_icmpge
+INST[0xa3] = if_cmp(function(v1,v2){return  v1[1] > v2[1] } ) // if_icmpgt
+INST[0xa4] = if_cmp(function(v1,v2){return  v1[1] <= v2[1] } ) // if_icmple
 
 function if_eq(func) {
-    function(c, p, s, cls, l) {
+    return function(c, p, s, cls, l) {
 	var v = s.pop();
 	if (func(v)) {
 	    return p+signed((c[p+1] << 8) + c[p+2])
@@ -348,40 +397,43 @@ function if_eq(func) {
     }
 }
 
-INST[0x99] = if_eq(function(v) { v[1] == 0 }) // ifeq
-INST[0x9a] = if_eq(function(v) { v[1] != 0 }) // ifne
-INST[0x9b] = if_eq(function(v) { v[1] < 0 }) // iflt
-INST[0x9c] = if_eq(function(v) { v[1] >= 0 }) // ifge
-INST[0x9d] = if_eq(function(v) { v[1] > 0 }) // ifgt
-INST[0x9e] = if_eq(function(v) { v[1] <= 0 }) // ifle
-INST[0xc7] = if_eq(function(v) { v[1] != null }) // ifnonnull
-INST[0xc6] = if_eq(function(v) { v[1] == null}) // ifnull
+INST[0x99] = if_eq(function(v) {return  v[1] == 0 }) // ifeq
+INST[0x9a] = if_eq(function(v) {return  v[1] != 0 }) // ifne
+INST[0x9b] = if_eq(function(v) {return  v[1] < 0 }) // iflt
+INST[0x9c] = if_eq(function(v) {return  v[1] >= 0 }) // ifge
+INST[0x9d] = if_eq(function(v) {return  v[1] > 0 }) // ifgt
+INST[0x9e] = if_eq(function(v) {return  v[1] <= 0 }) // ifle
+INST[0xc7] = if_eq(function(v) {return  v[1] != null }) // ifnonnull
+INST[0xc6] = if_eq(function(v) {return  v[1] == null}) // ifnull
 
 function iop(func) {
-    function(c, p, s, cls, l) {
+    return function(c, p, s, cls, l) {
 	var v1 = s.pop()
 	var v2 = s.pop()
-	s.push([v1[0], func(v1, v2)])
+	s.push([v1[0], func(v1[1], v2[1])])
+	print(" --- debug -- running op "+func+" with "+v1[1]+" and "+v2[1]+" res "+func(v1[1],v2[1]))
 	return p+1
     }
 }
 
-INST[0x61]=INST[0x60]=INST[0x62]=INST[0x63]=iop(function(a,b){a+b})//{ilfd}add
-INST[0x64]=INST[0x65]=INST[0x66]=INST[0x67]=iop(function(a,b){a-b})//{ilfd}sub
-INST[0x68]=INST[0x69]=INST[0x6a]=INST[0x6b]=iop(function(a,b){a*b})//{ilfd}mul
-INST[0x6c]=INST[0x6d]=INST[0x6e]=INST[0x6f]=iop(function(a,b){a/b})//{ilfd}div
+INST[0x61]=INST[0x60]=INST[0x62]=INST[0x63]=iop(function(a,b){return a+b})//{ilfd}add
+INST[0x64]=INST[0x65]=INST[0x66]=INST[0x67]=iop(function(a,b){return a-b})//{ilfd}sub
+INST[0x68]=INST[0x69]=INST[0x6a]=INST[0x6b]=iop(function(a,b){return a*b})//{ilfd}mul
+INST[0x6c]=INST[0x6d]=INST[0x6e]=INST[0x6f]=iop(function(a,b){return a/b})//{ilfd}div
 
 INST[0x84] = function(c, p, s, cls, l) {
     var idx = c[p+1]
     var val = c[p+2]
-    l[idx] += val
+    l[idx][1] += val
     return p+3
 }
 
 
 INST[0xa7] = function(c, p, s, cls, l) { // goto
+    print(" --- debug -- bytes "+c[p+1]+" and "+c[p+2]+"")
     var off = signed((c[p+1] << 8) + c[p+2])
-    return off + p
+    print(" --- debug -- offset "+off)
+    return off + p+1
 }
 
 INST[0xb2] = function(c,p,s,cls,l) { // getstatic
@@ -396,10 +448,10 @@ INST[0xbb] = function(c,p,s,cls,l) { // new
     var clsname = cls.constants[idx][1]
     if (CLASSES[clsname]) {
 	// this means we know which class it is
- 	java.lang.System.out.println(" ---- debug ---- creating object "+clsname)
+ 	print(" ---- debug ---- creating object "+clsname)
 	var obj = {type: clsname}
 	var newcls = CLASSES[clsname]
-	s.push(["obj", {cls: clsname, fields= {}}])
+	s.push(["obj", {cls: clsname, fields: {}}])
     } else {
 	// since we haven't loaded this class we fall back to the JVM
 	// classes this is harder than it looks, as JVM classes are
@@ -407,7 +459,7 @@ INST[0xbb] = function(c,p,s,cls,l) { // new
 	// is, I believe, to just push now an empty symbol onto the
 	// stack and only create the object when we come to
 	// invokespecial
-	java.lang.System.out.println(" ---- debug ---- loading jvm class "+clsname)
+	print(" ---- debug ---- loading jvm class "+clsname)
 	s.push(["NEWjvmobj", clsname])
     }
 }
@@ -463,7 +515,7 @@ INST[0xb9] = function(c,p,s,cls,l) { // invokespecial
     var mtype = m[2]
     var argst = mtype.match(/(\(.*\))/)[0]
     var nargs = argst.match(typereg).length-1
-    java.lang.System.out.println(" --- debug --- passing "+nargs+" args")
+    print(" --- debug --- passing "+nargs+" args")
     var newl = {}
     for (var i = nargs; i >= 0; --i) {
 	newl[i] = s.pop()
@@ -478,22 +530,30 @@ INST[0xb9] = function(c,p,s,cls,l) { // invokespecial
 	return
     } else {
 	// we're in JVM-land
-	
+	assert(1==2)
     }
 }
 
 function runMethod(method, cls, locals) {
     var stack = []
-    var code = method.code
-    var ip = 0
-    while (1) {
-	var res = INST[code[ip]](code, ip, stack, cls, locals)
-	if (res == "return") {
-	    return stack.pop()
-	} else if (res == "throw") {
-	    throw "jvmException" // FIXME: use the handlers
-	} else {
-	    ip = res
+    print(" --- debug -- running method "+method.name)
+    if (method.jscode) {
+	// call a js version of the method, if exists
+	return method.jscode(method, cls, locals)
+    } else {
+	var code = method.code
+	var ip = 0
+	while (1) {
+	    print(" --- debug -- running inst "+code[ip].toString(16)+" in pos "+ip+" with stack "+stack);
+	    var res = INST[code[ip]](code, ip, stack, cls, locals)
+	    print(" --- debug -- got "+res+" back")
+	    if (res == "return") {
+		return stack.pop()
+	    } else if (res == "throw") {
+		throw "jvmException" // FIXME: use the handlers
+	    } else {
+		ip = res
+	    }
 	}
     }
 }
@@ -502,9 +562,11 @@ function runClass(cls) {
     // to run a class we need to find the public method Main with type
     //   ([Ljava/lang/String;)V
     // and run it
-    for (var m = 0; m < cls.methods.length; ++m) {
-	if ((m.name == "Main") && (m.type == "([Ljava/lang/String;)V"))
-	    return runMethod(m, cls, {})
+    print(" --- debug -- running class "+cls.name)
+    for (var i = 0; i < cls.methods.length; ++i) {
+	var m = cls.methods[i]
+	if ((m.name == "main") && (m.type == "([Ljava/lang/String;)V"))
+	    return runMethod(m, cls, {variables:{}})
     }
     assert(1 == 2)
 }
@@ -512,6 +574,8 @@ function runClass(cls) {
 
 try {
     parseClass("Hello.class")
+    var c = parseClass("Test1.class")
+    runClass(c)
 } catch(e) {
     if(e.rhinoException != null)
     {
