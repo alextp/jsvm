@@ -1,5 +1,3 @@
-//vijay was here
-
 var CONSTANT_Class = 7
 var CONSTANT_Fieldref = 9
 var CONSTANT_Methodref = 10
@@ -76,6 +74,7 @@ function validateConstants(clist) {
 	    assert(clist[clist[i][1]][0] == "class")
 	    clist[i][1] = clist[clist[i][1]][1]
 	    assert(clist[clist[i][2]][0] == "nt")
+	    clist[i][2] = clist[clist[i][2]]
 	} else if (tag == "string") {
 	    assert(clist[clist[i][1]][0] =="utf")
 	    clist[i][1] = clist[clist[i][1]][1]
@@ -276,7 +275,8 @@ function parseClass(fname) {
 	superName: supr,
 	interfaces: interfaces,
 	fields: fields,
-	methods: methods
+	methods: methods,
+	constants: constants
     }
     CLASSES[ths] = cls
     return cls
@@ -439,7 +439,16 @@ INST[0xa7] = function(c, p, s, cls, l) { // goto
 INST[0xb2] = function(c,p,s,cls,l) { // getstatic
     var idx = (c[p+1] << 8) + c[p+2]
     var fref = cls.constants[idx]
-    s.push(fref)
+    var ncls = fref[1]
+    var nt = fref[2]
+    if (CLASSES[ncls]) { // our class
+	assert(1 == 2) // we need to have initialized this stuff
+		       // before and we're not doing it right now. FIXME
+    } else {
+	// a JVM class
+	eval("var field = "+cls.constants[ncls][1].replace("/",".")+"."+nt[1])
+	s.push(["jvmobj", field])
+    }
     return p+3
 }
 
@@ -462,6 +471,7 @@ INST[0xbb] = function(c,p,s,cls,l) { // new
 	print(" ---- debug ---- loading jvm class "+clsname)
 	s.push(["NEWjvmobj", clsname])
     }
+    return p+3
 }
 
 INST[0x59] = function(c,p,s,cls,l) { // dup
@@ -469,6 +479,12 @@ INST[0x59] = function(c,p,s,cls,l) { // dup
     s.push(t)
     s.push(t)
     return p+1
+}
+
+INST[0x12] = function(c,p,s,cls,l) { // ldc
+    var idx = c[p+1]
+    s.push(cls.constants[idx])
+    return p+2
 }
 
 function validateMethodRef(obj, clsname, method) {
@@ -508,18 +524,38 @@ function validateMethodRef(obj, clsname, method) {
     return success
 }
 
-INST[0xb9] = function(c,p,s,cls,l) { // invokespecial
+function formatArgs(l) {
+    // let's make use of the fact that all args are in the newl vector
+    // in the function below
+    var r = []
+    for (var i = 1; i < l.length; ++i) {
+	r.push("newl["+i+"][1]")
+    }
+    print(" --- debug -- formatting args as '"+r.join(",")+"'")
+    return r.join(",")
+}
+
+function dotify(s) {
+    return s.replace("/", ".")
+}
+
+INST[0xb7] = function(c,p,s,cls,l) { // invokespecial
     var idx = (c[p+1] << 8) + c[p+2]
     var m = cls.constants[idx]
-    var mname = m[1]
-    var mtype = m[2]
+    print(" --- debug -- this is "+m)
+    var mname = m[2][1]
+    var mtype = m[2][2]
+    print(" --- debug -- mname is "+mname+" mtype is "+mtype+" ")
     var argst = mtype.match(/(\(.*\))/)[0]
-    var nargs = argst.match(typereg).length-1
+    var nargs = argst.match(typereg)
+    if (!nargs) nargs = 0
+    else nargs = nargs.length
     print(" --- debug --- passing "+nargs+" args")
-    var newl = {}
+    var newl = []
     for (var i = nargs; i >= 0; --i) {
-	newl[i] = s.pop()
+	newl.push(s.pop())
     }
+    newl.reverse()
     var o = newl[0]
     if (o[0] == "obj") {
 	var obj = o[1]
@@ -527,12 +563,60 @@ INST[0xb9] = function(c,p,s,cls,l) { // invokespecial
 	var method = validateMethodRef(obj, clsname, m)
 	var ret = runMethod(method[1], method[0], newl)
 	s.push(ret)
-	return
+	return p+3
     } else {
-	// we're in JVM-land
-	assert(1==2)
+	// we're in JVM-land, so we need to actually create the object now
+	// if it's a constructor, and it should always be if we're in this situation
+	s.pop() // this is so we can push the real object
+	print(" --- debug -- args are "+newl+" formatted as "+formatArgs(newl))
+	var code = " var newObj = new "+dotify(o[1])+"("+formatArgs(newl)+")"
+	print(" --- debug the code is '"+code+"'")
+	print(" ----")
+	eval(code)
+	s.push(["jvmobj", newObj])
+	return p+3
     }
 }
+
+INST[0xb6] = function(c,p,s,cls,l) { // invokevirtual
+    var idx = (c[p+1] << 8) + c[p+2]
+    var m = cls.constants[idx]
+    print(" --- debug -- this is "+m)
+    var mname = m[2][1]
+    var mtype = m[2][2]
+    print(" --- debug -- mname is "+mname+" mtype is "+mtype+" ")
+    var argst = mtype.match(/(\(.*\))/)[0]
+    var nargs = argst.match(typereg)
+    if (!nargs) nargs = 0
+    else nargs = nargs.length
+    print(" --- debug --- passing "+nargs+" args")
+    var newl = []
+    for (var i = nargs; i >= 0; --i) {
+	newl.push(s.pop())
+    }
+    newl.reverse()
+    var o = newl[0]
+    if (o[0] == "obj") { // as far as I know there is no difference
+			 // here with invokespecial as far as not
+			 // checking for permission is concerned
+	var obj = o[1]
+	var clsname = obj.cls
+	var method = validateMethodRef(obj, clsname, m)
+	var ret = runMethod(method[1], method[0], newl)
+	s.push(ret)
+	return p+3
+    } else {
+	// we're in JVM-land, but now with no constructors
+	print(" --- debug -- args are "+newl+" formatted as "+formatArgs(newl))
+	var code = " var ret = newl[0][1]."+mname+"("+formatArgs(newl)+")"
+	print(" --- debug the code is '"+code+"'")
+	print(" ----")
+	eval(code)
+	s.push(["jvmobj", ret])
+	return p+3
+    }
+}
+
 
 function runMethod(method, cls, locals) {
     var stack = []
@@ -573,9 +657,9 @@ function runClass(cls) {
 
 
 try {
-    parseClass("Hello.class")
+    var b = parseClass("Hello.class")
     var c = parseClass("Test1.class")
-    runClass(c)
+    runClass(b)
 } catch(e) {
     if(e.rhinoException != null)
     {
