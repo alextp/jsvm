@@ -591,10 +591,45 @@ INST[0xb8] = function(c,p,s,cls,l) { // invokestatic
 	if (m.name == mname)
 	    return runMethod(m, cls2, {variables:{}})
     }
-print("--- debug -- in function invokestatic clsname:"+clsname+"  methodname:"+mname)
-
-
+    print("--- debug -- in function invokestatic clsname:"+clsname+"  methodname:"+mname)
 }
+
+
+INST[0xb8] = function(c,p,s,cls,l) { // invokestatic
+    var idx = (c[p+1] << 8) + c[p+2]
+    var m = cls.constants[idx]
+    print(" --- debug -- this is "+m)
+    var mcls = m[1]
+    print(" --- debug -- method class is "+mcls)
+    var mname = m[2][1]
+    var mtype = m[2][2]
+    print(" --- debug -- mname is "+mname+" mtype is "+mtype+" ")
+    var argst = mtype.match(/(\(.*\))/)[0]
+    var nargs = argst.match(typereg)
+    if (!nargs) nargs = 0
+    else nargs = nargs.length
+    print(" --- debug --- passing "+nargs+" args")
+    var newl = []
+    for (var i = nargs-1; i >= 0; --i) {
+	newl.push(s.pop())
+    }
+    newl.reverse()
+    if (CLASSES[mcls]) { // we're in our land
+	var method = getVTable(CLASSES[mcls])[mname + "||"+mtype]
+	var ret = null
+	if (method.jsfunc)
+	    ret = method.jsfunc(method, CLASSES[method.cls], newl)
+	else
+	    ret = runMethod(method, CLASSES[method.cls], newl)
+	if (ret != "void")
+	    s.push(ret)
+	return p+3
+    } else {
+	// we're in jvm-land, so who knows what to do. FIXME
+	assert(1==2)
+    }
+}
+
 
 INST[0xb7] = function(c,p,s,cls,l) { // invokespecial
     var idx = (c[p+1] << 8) + c[p+2]
