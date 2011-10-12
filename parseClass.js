@@ -34,6 +34,15 @@ function assert(exp, message) {
     }
 }
 
+function clone(obj) {
+    if (null == obj || "object" != typeof obj) return obj;
+    var copy = obj.constructor();
+    for (var attr in obj) {
+        if (obj.hasOwnProperty(attr)) copy[attr] = obj[attr];
+    }
+    return copy;
+}
+
 
 function readConstant(f) {
     var tag = f.read()
@@ -70,15 +79,11 @@ function validateConstants(clist) {
 	if (tag == "class") {
 	    assert(clist[clist[i][1]][0] == "utf")
 	    clist[i][1] = clist[clist[i][1]][1]
-	} else if ((tag == "fref") || (tag == "mref") || (tag == "imref")) {
-	    assert(clist[clist[i][1]][0] == "class")
-	    clist[i][1] = clist[clist[i][1]][1]
-	    assert(clist[clist[i][2]][0] == "nt")
-	    clist[i][2] = clist[clist[i][2]]
-	} else if (tag == "string") {
-	    assert(clist[clist[i][1]][0] =="utf")
-	    clist[i][1] = clist[clist[i][1]][1]
-	} else if (tag == "nt") {
+	}
+    }
+    for (var i = 1; i < clist.length; ++i) {
+	var tag = clist[i][0]
+	if (tag == "nt") {
 	    assert(clist[clist[i][1]][0] == "utf")
 	    clist[i][1] = clist[clist[i][1]][1]
 	    assert(clist[clist[i][2]][0] == "utf")
@@ -87,10 +92,19 @@ function validateConstants(clist) {
     }
     for (var i = 1; i < clist.length; ++i) {
 	var tag = clist[i][0]
-	//if (tag == "fref")
-	//    validateTypeName(clist[i][1])
-	//else if ((tag == "mref") || (tag == "imref"))
-	//    validateMethodName(clist[i][1])  // TODO: fix this validation
+	if ((tag == "fref") || (tag == "mref") || (tag == "imref")) {
+	    assert(clist[clist[i][1]][0] == "class")
+	    clist[i][1] = clist[clist[i][1]][1]
+	    assert(clist[clist[i][2]][0] == "nt")
+	    clist[i][2] = clist[clist[i][2]]
+	}
+    }
+    for (var i = 1; i < clist.length; ++i) {
+	var tag = clist[i][0]
+	if (tag == "string") {
+	    assert(clist[clist[i][1]][0] =="utf")
+	    clist[i][1] = clist[clist[i][1]][1]
+	}
     }
 }
 
@@ -168,7 +182,7 @@ function ignoreAttributes(f) {
     }
 }
 
-function readMethods(f, mcount, constants) {
+function readMethods(f, mcount, constants, cls) {
     var ms = []
     for (var i = 0; i < mcount; ++i) {
 	var flags = f.readShort()
@@ -221,6 +235,7 @@ function readMethods(f, mcount, constants) {
 	ms.push({
 	    flags: flags,
 	    name: mname,
+	    cls: cls,
 	    type: type,
 	    nlocals: nlocals,
 	    code: code,
@@ -260,7 +275,7 @@ function parseClass(fname) {
     var fcount = f.readShort()
     var fields = readFields(f, fcount, constants)
     var mcount = f.readShort()
-    var methods = readMethods(f, mcount, constants)
+    var methods = readMethods(f, mcount, constants, ths)
     ignoreAttributes(f)
     print("Read class: "+ths+" super "+supr+" ifaces "+interfaces)
     for (var f=0; f < fields.length; ++f) {
@@ -271,6 +286,7 @@ function parseClass(fname) {
     }
     var cls = {
 	name: ths,
+	vtable: null,
 	flags: aflags,
 	superName: supr,
 	interfaces: interfaces,
@@ -282,8 +298,24 @@ function parseClass(fname) {
     return cls
 }
 
-function makeJsMethod(name, type, func) {
-    return {name: name, type:type, jsfunc:func}
+function makeJsMethod(name, type, func, cls) {
+    return {name: name, type:type, jsfunc:func, cls: cls}
+}
+
+function getVTable(cls) {
+    if (cls.vtable) return cls.vtable;
+    var vt = {}
+    if (cls.superName) {
+	print(" --- debug -- getting "+cls.superName+"'s vtable")
+	vt = clone(getVTable(CLASSES[cls.superName]))
+    }
+    print(" --- debug getting "+cls.name+"'s vtable")
+    for (var i = 0; i < cls.methods.length; ++i) {
+	var key = cls.methods[i].name + "||"+cls.methods[i].type
+	vt[key] = cls.methods[i]
+    }
+    cls.vtable = vt
+    return vt
 }
 
 var COUNT_OBJ = 0
@@ -292,6 +324,7 @@ CLASSES["java/lang/Object"] = {
     name:"java/lang/Object",
     flags:0,
     superName: null,
+    vtable: null,
     interfaces: [],
     fields: [],
     methods: [
@@ -299,20 +332,20 @@ CLASSES["java/lang/Object"] = {
 	    COUNT_OBJ += 1
 	    locals[0].__hash_code = COUNT_OBJ
 	    locals[0].__class = cls
-	}),
+	}, "java/lang/Object"),
 	makeJsMethod("hashCode", "()I", function(m, cls, locals) {
 	    return locals[0].__hash_code
-	}),
+	}, "java/lang/Object"),
 	makeJsMethod("equals", "(Ljava/lang/Object;)I", function(m, cls, locals) {
 	    return locals[0].__hash_code == locals[1].__hash_code
-	}),
+	}, "java/lang/Object"),
 	makeJsMethod("clone", "()V", function(m, cls, locals) {
-	    return locals[0].copy()
-	}),
+	    return clone(locals[0])
+	}, "java/lang/Object"),
 	makeJsMethod("getClass", "()Ljava/lang/Class;", function(m, cls, l) {cls}),
 	makeJsMethod("toString", "()Ljava/lang/String;", function(m,cls,l){
 	    return cls.name+"@"+locals[0].__hash_code.toStirng(16)
-	})
+	}, "java/lang/Object")
 	//finalize() I can get away with not using finalize
 	// notify, wait, etc, not implementing because of lack of threading
 	//
@@ -351,6 +384,12 @@ INST[0x3c] = istore(1)
 INST[0x3d] = istore(2)
 INST[0x3e] = istore(3)
 
+
+INST[0x4b] = istore(0) // astore_0
+INST[0x4c] = istore(1) // astore_1
+INST[0x4d] = istore(2) // astore_2
+INST[0x4e] = istore(3) // astore_3
+
 function iload(i) {
     return function(c, p, s, cls, l) { s.push(l[i]); return p+1 }
 }
@@ -360,6 +399,13 @@ INST[0x1b] = iload(1)
 INST[0x1c] = iload(2)
 INST[0x1d] = iload(3)
 INST[0x15] = function(c,p,s,cls,l) { s.push(l[c[p+1]]); return p+2} // iload
+
+INST[0x19] = function(c,p,s,cls,l) { s.push(l[c[p+1]]); return p+2} // aload
+INST[0x2a] = iload(0) // aload_0
+INST[0x2b] = iload(1) // aload_1
+INST[0x2c] = iload(2) // aload_2
+INST[0x2d] = iload(3) // aload_3
+
 
 INST[0x10] = function(c,p,s,cls,l) { s.push(["int",c[p+1]]); return p+2} // bipush
 
@@ -446,7 +492,7 @@ INST[0xb2] = function(c,p,s,cls,l) { // getstatic
 		       // before and we're not doing it right now. FIXME
     } else {
 	// a JVM class
-	eval("var field = "+cls.constants[ncls][1].replace("/",".")+"."+nt[1])
+	eval("var field = "+ncls.replace("/",".")+"."+nt[1])
 	s.push(["jvmobj", field])
     }
     return p+3
@@ -460,7 +506,7 @@ INST[0xbb] = function(c,p,s,cls,l) { // new
  	print(" ---- debug ---- creating object "+clsname)
 	var obj = {type: clsname}
 	var newcls = CLASSES[clsname]
-	s.push(["obj", {cls: clsname, fields: {}}])
+	s.push(["obj", {cls: clsname, fields: {}, vtable: getVTable(newcls)}])
     } else {
 	// since we haven't loaded this class we fall back to the JVM
 	// classes this is harder than it looks, as JVM classes are
@@ -473,6 +519,7 @@ INST[0xbb] = function(c,p,s,cls,l) { // new
     }
     return p+3
 }
+
 
 INST[0x59] = function(c,p,s,cls,l) { // dup
     var t = s.pop()
@@ -487,41 +534,32 @@ INST[0x12] = function(c,p,s,cls,l) { // ldc
     return p+2
 }
 
-function validateMethodRef(obj, clsname, method) {
-    // Must implement MRO here. The relevant spec (5.4.3.3) is as follows
-    // 1 If C is an interface throw IncompatibleClassChangeError
-    var cls = CLASSES[clsname]
-    var mname = method[1]
-    var mtype = method[2]
-    if (ACC_INTERFACE & cls.flags != 0) throw "IncompatibleClassChangeError"
-    // 2 Look up the referenced method in C and its superclasses
-    //  2.1 If C declares a method with right name and descriptor, success
-    //  2.2 if C has a superclass, recurse step 2 on the superclass C
-    function doStepTwo(cls) {
-	for (var i = 0; i < cls.methods.length; ++i) {
-	    if ((cls.methods[i].name == mname) && (cls.methods[i].type == mtype)) {
-		return [cls, cls.methods[i]]
-	    }
-	}
-	if (cls.supr) return doStepTwo(CLASSES[cls.supr])
-	return null
-    }
-    var success = null
-    var s2 = doStepTwo(cls)
-    if (!s2) {
-	// 3 If any superinterface of C has right name and descriptor, success
-	
-    } else { success = s2 }
-    // 4 fail with NoSuchMethodError
-    if (!success) throw "NoSuchMethodError"
-    
-    // In case of success: 
-    //  1. If D is abstract and C is not, throw AbstractMethodError
-    //  2. if the method is not accessible, throw IllegalAccessError
-    //  3. something to do with classloaders. TODO: figure out if it matters
-    //FIXME: I'm ignoring the whole shebang
+INST[0xb5] = function(c,p,s,cls,l) { // putfield
+    var val = s.pop()
+    var obj = s.pop()
+    var fname = cls.constants[(c[p+1] << 8) + c[p+2]][2][1]
+    assert(obj[0] == "obj")
+    obj[1].fields[fname] = val
+    return p+3
+}
 
-    return success
+INST[0xb4] = function(c,p,s,cls,l) { // getfield
+    var obj = s.pop()
+    var fname = cls.constants[(c[p+1] << 8) + c[p+2]][2][1]
+    assert(obj[0] == "obj")
+    s.push(obj[1].fields[fname])
+    return p+3
+}
+
+INST[0xac] = function(c,p,s,cls,l) { // ireturn
+    print(" --- debug -- returning int")
+    return "ireturn"
+}
+
+
+INST[0xb1] = function(c,p,s,cls,l) { // return
+    print(" --- debug -- returning")
+    return "return"
 }
 
 function formatArgs(l) {
@@ -543,6 +581,8 @@ INST[0xb7] = function(c,p,s,cls,l) { // invokespecial
     var idx = (c[p+1] << 8) + c[p+2]
     var m = cls.constants[idx]
     print(" --- debug -- this is "+m)
+    var mcls = m[1]
+    print(" --- debug -- method class is "+mcls)
     var mname = m[2][1]
     var mtype = m[2][2]
     print(" --- debug -- mname is "+mname+" mtype is "+mtype+" ")
@@ -560,9 +600,14 @@ INST[0xb7] = function(c,p,s,cls,l) { // invokespecial
     if (o[0] == "obj") {
 	var obj = o[1]
 	var clsname = obj.cls
-	var method = validateMethodRef(obj, clsname, m)
-	var ret = runMethod(method[1], method[0], newl)
-	s.push(ret)
+	var method = getVTable(CLASSES[mcls])[mname + "||"+mtype]
+	var ret = null
+	if (method.jsfunc)
+	    ret = method.jsfunc(method, CLASSES[method.cls], newl)
+	else
+	    ret = runMethod(method, CLASSES[method.cls], newl)
+	if (ret != "void")
+	    s.push(ret)
 	return p+3
     } else {
 	// we're in JVM-land, so we need to actually create the object now
@@ -601,8 +646,12 @@ INST[0xb6] = function(c,p,s,cls,l) { // invokevirtual
 			 // checking for permission is concerned
 	var obj = o[1]
 	var clsname = obj.cls
-	var method = validateMethodRef(obj, clsname, m)
-	var ret = runMethod(method[1], method[0], newl)
+	var method = obj.vtable[mname + "||"+mtype]
+	var ret = null
+	if (method.jscode)
+	    ret = method.jscode(method, CLASSES[method.cls], newl)
+	else
+	    ret = runMethod(method, CLASSES[method.cls], newl)
 	s.push(ret)
 	return p+3
     } else {
@@ -620,7 +669,7 @@ INST[0xb6] = function(c,p,s,cls,l) { // invokevirtual
 
 function runMethod(method, cls, locals) {
     var stack = []
-    print(" --- debug -- running method "+method.name)
+    print(" --- debug -- running class "+cls.name+" method "+method.name)
     if (method.jscode) {
 	// call a js version of the method, if exists
 	return method.jscode(method, cls, locals)
@@ -632,6 +681,8 @@ function runMethod(method, cls, locals) {
 	    var res = INST[code[ip]](code, ip, stack, cls, locals)
 	    print(" --- debug -- got "+res+" back")
 	    if (res == "return") {
+		return "void"
+	    } else if (res == "ireturn") {
 		return stack.pop()
 	    } else if (res == "throw") {
 		throw "jvmException" // FIXME: use the handlers
@@ -659,8 +710,8 @@ function runClass(cls) {
 try {
     var b = parseClass("Hello.class")
     var c = parseClass("Test1.class")
-    var d = parseClass("parseClass.class")
-    runClass(b)
+    var d = parseClass("Test2.class")
+    runClass(d)
 } catch(e) {
     if(e.rhinoException != null)
     {
