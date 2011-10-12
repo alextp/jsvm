@@ -356,6 +356,7 @@ var INST = []
 
 for (var i = 0; i < 256; ++i) {
     INST[i] = function(code, position, stack, cls, locals) { 
+	print("Did not implement bytecode '"+code[position].toString(16)+"'");
 	throw "Did not implement bytecode '"+code[position].toString(16)+"'"
     }
 }
@@ -501,6 +502,7 @@ INST[0xb2] = function(c,p,s,cls,l) { // getstatic
 INST[0xbb] = function(c,p,s,cls,l) { // new
     var idx = (c[p+1] << 8) + c[p+2]
     var clsname = cls.constants[idx][1]
+
     if (CLASSES[clsname]) {
 	// this means we know which class it is
  	print(" ---- debug ---- creating object "+clsname)
@@ -575,6 +577,23 @@ function formatArgs(l) {
 
 function dotify(s) {
     return s.replace("/", ".")
+}
+
+INST[0xb8] = function(c,p,s,cls,l) { // invokestatic
+ var idx = (c[p+1] << 8) + c[p+2]
+ var clsname = cls.constants[idx][1]
+ var method = cls.constants[idx][2]
+ var mname = method[1];
+ var cls2 = CLASSES[clsname];
+ print(" --- debug -- running class "+cls.name)
+    for (var i = 0; i < cls2.methods.length; ++i) {
+	var m = cls2.methods[i]
+	if (m.name == mname)
+	    return runMethod(m, cls2, {variables:{}})
+    }
+print("--- debug -- in function invokestatic clsname:"+clsname+"  methodname:"+mname)
+
+
 }
 
 INST[0xb7] = function(c,p,s,cls,l) { // invokespecial
@@ -681,8 +700,10 @@ function runMethod(method, cls, locals) {
 	    var res = INST[code[ip]](code, ip, stack, cls, locals)
 	    print(" --- debug -- got "+res+" back")
 	    if (res == "return") {
+		print("--exiting -- class"+cls.name+"  method  "+method.name)
 		return "void"
 	    } else if (res == "ireturn") {
+		print("--exiting -- class"+cls.name+"  method  "+method.name)
 		return stack.pop()
 	    } else if (res == "throw") {
 		throw "jvmException" // FIXME: use the handlers
@@ -708,10 +729,10 @@ function runClass(cls) {
 
 
 try {
-    var b = parseClass("Hello.class")
-    var c = parseClass("Test1.class")
-    var d = parseClass("Test2.class")
-    runClass(d)
+    var b = parseClass("World.class")
+    var a = parseClass("ClassA.class")
+   // var c = parseClass("Test2.class")
+    runClass(a)
 } catch(e) {
     if(e.rhinoException != null)
     {
