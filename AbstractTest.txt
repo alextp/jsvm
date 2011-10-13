@@ -1,0 +1,6 @@
+Writer - abstract class, has one function write
+HelloWriter - subclass of Writer, writes "Hello,"
+WorldWriter - subclass of Writer,  writes "World!"
+Caller - takes as input a writer, and calls writer::write()
+Printer - main class, creates a caller, a hellowriter and a worldwriter, calls them to print "Hello,World!"
+
