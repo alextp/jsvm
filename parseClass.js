@@ -139,7 +139,8 @@ function readInterfaces(f, icount, ctable) {
 
 function ignoreAttribute(f) {
     var len = f.readInt() 
-    for (var k = 0; k < len; ++k) f.read()
+    print(" --- debug -- ignoring attr len "+len)
+    f.skipBytes(len)
 }
 
 function readFields(f, fcount, constants) {
@@ -158,9 +159,11 @@ function readFields(f, fcount, constants) {
 		isconst = true;
 		cval = constants[f.readShort()]
 	    } else {
+		print(" --- debug -- ignoring field attr "+name)
 		ignoreAttribute(f) // we only need to deal with constantvalue attributes
 	    }
 	}
+	print(" --- debug -- read field name "+name)
 	fields.push({
 	    flags: flags, // the flags, things like protected, public, etc
 	    name: name, // the field name
@@ -173,10 +176,13 @@ function readFields(f, fcount, constants) {
     return fields
 }
 
-function ignoreAttributes(f) {
+function ignoreAttributes(f, constants) {
+    print(" --- debug -- ignoring attributes")
     var acount = f.readShort()
+    print(" --- there are "+acount+" attributes to ignore")
     for(var k = 0; k < acount; ++k) {
-	f.readShort()
+	var n = f.readShort()
+	print(" --- debug -- ignoring attr n "+n+" name "+constants[n])
 	//f.readInt()
 	ignoreAttribute(f)
     }
@@ -184,6 +190,7 @@ function ignoreAttributes(f) {
 
 function readMethods(f, mcount, constants, cls) {
     var ms = []
+    print(" --- debug -- reading methods")
     for (var i = 0; i < mcount; ++i) {
 	var flags = f.readShort()
 	var mname = constants[f.readShort()][1]
@@ -195,6 +202,7 @@ function readMethods(f, mcount, constants, cls) {
 	var deprecated = false
 	var handtable = []
 	var exceptions = []
+	
 	for (var j = 0; j < acount; ++j) {
 	    var name = constants[f.readShort()][1]
 	    if (name == "Code") {
@@ -211,6 +219,7 @@ function readMethods(f, mcount, constants, cls) {
 			code[k] = (1 << 8) + code[k]
 		}
 		var elen = f.readShort()
+		print(" --- debug -- method name "+mname+" elen "+elen)
 		for (var k=0; k < elen; ++k) {
 		    handtable.push({
 			start: f.readShort(),
@@ -219,19 +228,27 @@ function readMethods(f, mcount, constants, cls) {
 			type: constants[f.readShort()][1]
 		    })
 		}
-		ignoreAttributes(f)
+		ignoreAttributes(f, constants)
 	    } else if (name == "Exceptions") {
-		f.reatInt() // ignore length
+		f.readInt() // ignore length
+		print(" --- debug -- reading exception attribute")
 		var elen = f.readShort()
-		exceptions.push(constants[f.readShort()][1])
+		for (var n = 0 ; n < elen; ++n)
+		    exceptions.push(constants[f.readShort()][1])
 	    } else if (name == "Synthetic") {
 		synthetic = true
-		f.readInt()
+		print(" --- debug -- is synthetic")
+		ignoreAttribute(f)
 	    } else if (name == "Deprecated") {
 		deprecated = true
-		f.readInt()
-	    } else ignoreAttribute(f)
+		print(" --- debug -- is deprecated")
+		ignoreAttribute(f)
+	    } else {
+		print(" --- debug -- ignoring method attr "+name)
+		ignoreAttribute(f)
+	    }
 	}
+	print(" --- debug -- read method name "+mname+" type "+type)
 	ms.push({
 	    flags: flags,
 	    name: mname,
@@ -275,8 +292,10 @@ function parseClass(fname) {
     var fcount = f.readShort()
     var fields = readFields(f, fcount, constants)
     var mcount = f.readShort()
+    print(" --- debug -- reading "+mcount+" methods")
     var methods = readMethods(f, mcount, constants, ths)
-    ignoreAttributes(f)
+    print(" --- debug -- back to the class")
+    ignoreAttributes(f, constants)
     print("Read class: "+ths+" super "+supr+" ifaces "+interfaces)
     for (var f=0; f < fields.length; ++f) {
 	print("  field: `"+fields[f]["name"]+"` type: `"+fields[f].descr+"`")
@@ -764,10 +783,17 @@ function runClass(cls) {
 
 
 try {
-    var b = parseClass("World.class")
-    var a = parseClass("ClassA.class")
+    //var b = parseClass("World.class")
+    //var a = parseClass("ClassA.class")
    // var c = parseClass("Test2.class")
-    runClass(a)
+    var names = ["AnException", "AnotherException", "Caller",
+		 "HelloWriter", "Printer", 
+		 "Catcher1",
+		 "WorldWriter", "Writer"]
+    for (var c =0; c < names.length; ++c ) {
+	parseClass(names[c]+".class")
+    }
+    runClass(CLASSES["Printer"])
 } catch(e) {
     if(e.rhinoException != null)
     {
