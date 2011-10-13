@@ -133,7 +133,7 @@ var ACC_ABSTRACT = 0x0400 // Declared abstract; may not be instantiated.
 function readInterfaces(f, icount, ctable) {
     var ints = []	    
     for(var i = 0; i < icount; ++i)
-	ints.push(ctable[f.readShort()])
+	ints.push(ctable[f.readShort()][1])
     return ints
 }
 
@@ -221,11 +221,18 @@ function readMethods(f, mcount, constants, cls) {
 		var elen = f.readShort()
 		print(" --- debug -- method name "+mname+" elen "+elen)
 		for (var k=0; k < elen; ++k) {
+		    var s = f.readShort()
+		    var e = f.readShort()
+		    var h = f.readShort()
+		    var ti = f.readShort()
+		    var t = null
+		    if (ti == 0) t = "any"
+		    else t = constants[ti][1]
 		    handtable.push({
-			start: f.readShort(),
-			end: f.readShort(),
-			handler: f.readShort(),
-			type: constants[f.readShort()][1]
+			start: s,
+			end: e,
+			handler: h,
+			type: t
 		    })
 		}
 		ignoreAttributes(f, constants)
@@ -368,6 +375,56 @@ CLASSES["java/lang/Object"] = {
 	//finalize() I can get away with not using finalize
 	// notify, wait, etc, not implementing because of lack of threading
 	//
+    ]
+}
+
+CLASSES["java/lang/Serializable"] = {
+    name: "java/lang/Serializable",
+    flags:0,
+    superName:null,
+    vtable: null,
+    interfaces: [],
+    fields: [],
+    methods: []
+}
+
+CLASSES["java/lang/Throwable"] = {
+    name: "java/lang/Throwable",
+    flags:0,
+    superName:"java/lang/Object",
+    interfaces:["java/lang/Serializable"],
+    fields: [],
+    methods: [
+	//  Throwable	fillInStackTrace() 
+	//  Throwable	getCause() 
+	//  String	getLocalizedMessage() 
+	//  String	getMessage() 
+	//  StackTraceElement[]	getStackTrace() 
+	//  Throwable	initCause(Throwable cause) 
+	//  void	printStackTrace() 
+	//  void	printStackTrace(PrintStream s) 
+	//  void	printStackTrace(PrintWriter s) 
+	//  void	setStackTrace(StackTraceElement[] stackTrace) 
+	//  String	toString() 
+	// Throwable() 
+	// Throwable(String message) 
+	// Throwable(String message, Throwable cause) 
+	// Throwable(String message, Throwable cause) 
+	// Now let's see how many of these we can leave blank and still work!
+    ]
+}
+
+CLASSES["java/lang/Exception"] = {
+    name: "java/lang/Exception",
+    flags: 0,
+    superName: "java/lang/Throwable",
+    interfaces: [],
+    methods: [
+	makeJsMethod("<init>", "()V", function(m, cls, locals) {
+	}, "java/lang/Object"),
+	// Exception(String message) 
+	// Exception(String message, Throwable cause) 
+	// Exception(Throwable cause) 
     ]
 }
 
@@ -598,20 +655,6 @@ function dotify(s) {
     return s.replace("/", ".")
 }
 
-INST[0xb8] = function(c,p,s,cls,l) { // invokestatic
- var idx = (c[p+1] << 8) + c[p+2]
- var clsname = cls.constants[idx][1]
- var method = cls.constants[idx][2]
- var mname = method[1];
- var cls2 = CLASSES[clsname];
- print(" --- debug -- running class "+cls.name)
-    for (var i = 0; i < cls2.methods.length; ++i) {
-	var m = cls2.methods[i]
-	if (m.name == mname)
-	    return runMethod(m, cls2, {variables:{}})
-    }
-    print("--- debug -- in function invokestatic clsname:"+clsname+"  methodname:"+mname)
-}
 
 
 INST[0xb8] = function(c,p,s,cls,l) { // invokestatic
@@ -640,7 +683,10 @@ INST[0xb8] = function(c,p,s,cls,l) { // invokestatic
 	    ret = method.jsfunc(method, CLASSES[method.cls], newl)
 	else
 	    ret = runMethod(method, CLASSES[method.cls], newl)
-	if (ret != "void")
+	if (ret == "throw") {
+	    s.push(newl[0])
+	    return "throw"
+	} else if (ret != "void")
 	    s.push(ret)
 	return p+3
     } else {
@@ -679,7 +725,10 @@ INST[0xb7] = function(c,p,s,cls,l) { // invokespecial
 	    ret = method.jsfunc(method, CLASSES[method.cls], newl)
 	else
 	    ret = runMethod(method, CLASSES[method.cls], newl)
-	if (ret != "void")
+	if (ret == "throw") {
+	    s.push(newl[0])
+	    return ret
+	} else if (ret != "void")
 	    s.push(ret)
 	return p+3
     } else {
@@ -725,6 +774,10 @@ INST[0xb6] = function(c,p,s,cls,l) { // invokevirtual
 	    ret = method.jscode(method, CLASSES[method.cls], newl)
 	else
 	    ret = runMethod(method, CLASSES[method.cls], newl)
+	if (ret == "throw") {
+	    s.push(newl[0])
+	    return ret
+	}
 	s.push(ret)
 	return p+3
     } else {
@@ -739,6 +792,22 @@ INST[0xb6] = function(c,p,s,cls,l) { // invokevirtual
     }
 }
 
+INST[0xbf] = function(c,p,s,cls,l) { // athrow
+    var ex = s.pop()
+    s.length = 0
+    s.push(ex)
+    return "throw"
+}
+
+function matchType(extype, handler) {
+    print(" --- debug -- matching "+extype+" with "+handler)
+    if (handler == "any") return true
+    if (extype == handler) return true
+    for (var i = 0; i < CLASSES[extype].interfaces.length; ++i)
+	if (CLASSES[extype].interfaces[i] == handler) return true
+    if (CLASSES[extype].superName) return matchType(CLASSES[extype].superName,handler)
+    return false
+}
 
 function runMethod(method, cls, locals) {
     var stack = []
@@ -760,7 +829,26 @@ function runMethod(method, cls, locals) {
 		print("--exiting -- class"+cls.name+"  method  "+method.name)
 		return stack.pop()
 	    } else if (res == "throw") {
-		throw "jvmException" // FIXME: use the handlers
+		// all-righty, let's implement this thing
+		var ex = stack.pop()
+		print(" --- debug -- someone threw "+ex)
+		// we first need to go through the handlers matching
+		// the types of all catches with our exception's type
+		var handlers = method.handtable
+		var found = false
+		for (var i = 0; i < handlers.length; ++i) {
+		    if (!((ip > handlers[i].start)&&(ip < handlers[i].end))) continue
+		    if (! matchType(ex[1].cls, handlers[i].type)) continue
+		    ip = handlers[i].handler
+		    stack.push(ex)
+		    print(" --- debug -- going to handler at instr "+ip)
+		    found = true
+		    break
+		}
+		if (found) continue
+		// all else failing we throw it one level up
+		locals[0] = ex
+		return "throw"
 	    } else {
 		ip = res
 	    }
@@ -793,7 +881,7 @@ try {
     for (var c =0; c < names.length; ++c ) {
 	parseClass(names[c]+".class")
     }
-    runClass(CLASSES["Printer"])
+    runClass(CLASSES["Catcher1"])
 } catch(e) {
     if(e.rhinoException != null)
     {
