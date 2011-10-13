@@ -1,0 +1,3 @@
+AnException and AnotherException are exception classes
+Catcher1 has a main function which calls another function which throws an error always
+the error is caught in one of the catch blocks , and there is a finally block, all of which will print some error message
