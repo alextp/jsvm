@@ -10,6 +10,8 @@ var CONSTANT_Double = 6
 var CONSTANT_NameAndType = 12
 var CONSTANT_Utf8 = 1
 
+
+
 function print(x) {
     java.lang.System.out.println(x)
 }
@@ -467,6 +469,30 @@ INST[0x4c] = istore(1) // astore_1
 INST[0x4d] = istore(2) // astore_2
 INST[0x4e] = istore(3) // astore_3
 
+
+
+function iastorecheck(c,p,s,cls,l,type)//common function to do the array store instructions
+{
+	//im not checking type here
+	//because my example generated a short to be stored in an int array
+	var val = s.pop();
+	var idx = s.pop();
+	var arrayref  = s.pop();
+	if(arrayref[0]=="array"&& idx[1]<arrayref[1]["length"])
+	{
+		arrayref[1]["fields"][idx[1]] = val[1];
+	}
+	return p+1;
+}
+
+INST[0x4f] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_INT)}//iastore
+INST[0x50] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_LONG)}//lastore
+INST[0x51] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_FLOAT)}//fastore
+INST[0x52] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_DOUBLE)}//dastore
+INST[0x54] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_BOOLEAN)}//bastore
+INST[0x55] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_CHAR)}//castore
+INST[0x56] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_SHORT)}//sastore
+
 function iload(i) {
     return function(c, p, s, cls, l) { s.push(l[i]); return p+1 }
 }
@@ -484,7 +510,64 @@ INST[0x2c] = iload(2) // aload_2
 INST[0x2d] = iload(3) // aload_3
 
 
-INST[0x10] = function(c,p,s,cls,l) { s.push(["int",c[p+1]]); return p+2} // bipush
+
+function ialoadcheck(c,p,s,cls,l,t)//common function to do the array load instructions
+{
+	var idx = s.pop();
+	var arrayref  = s.pop();
+	var type= "unknown";
+	switch(t)
+	{
+		case ATYPE_INT:
+		type = "int"
+		break;
+		case ATYPE_LONG:
+		type = "int"
+		break;
+		case ATYPE_FLOAT:
+		type = "float"
+		break;
+		case ATYPE_DOUBLE:
+		type = "double"
+		break;
+		case ATYPE_BOOLEAN:
+		type = "boolean"
+		break;
+		case ATYPE_CHAR:
+		type = "char"
+		break;
+		case ATYPE_SHORT:
+		type = "short"
+		break;
+		
+	}
+	if(arrayref[0]=="array"&& idx[1]<arrayref[1]["length"])
+	{
+		var val = arrayref[1]["fields"][idx[1]];
+		s.push([type,val]);
+	}
+	return p+1;
+}
+
+INST[0x2e] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_INT)}//iaload
+INST[0x2f] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_LONG)}//laload
+INST[0x30] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_FLOAT)}//faload
+INST[0x31] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_DOUBLE)}//daload
+INST[0x33] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_BOOLEAN)}//baload
+INST[0x34] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_CHAR)}//caload
+INST[0x35] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_SHORT)}//saload
+
+
+INST[0x10] = function(c,p,s,cls,l) { 
+s.push(["int",c[p+1]]); 
+return p+2
+} // bipush
+INST[0x11] = function(c,p,s,cls,l) //sipush
+{
+var shrt = c[p+1]<<8|c[p+2]
+s.push(["short",shrt])
+return p+3
+}
 
 function if_cmp(func) {
     return function(c,p,s,cls,l) {
@@ -598,7 +681,23 @@ INST[0xbb] = function(c,p,s,cls,l) { // new
     return p+3
 }
 
+var ATYPE_BOOLEAN	= 4
+var ATYPE_CHAR	  =   5
+var ATYPE_FLOAT	  =   6
+var ATYPE_DOUBLE	= 7
+var ATYPE_BYTE	  =   8
+var ATYPE_SHORT	  =   9
+var ATYPE_INT	  =  10
+var ATYPE_LONG	 =   11
 
+INST[0xbc] = function(c,p,s,cls,l) { // newarray
+	var arr_type = c[p+1]
+	var arr_count = s.pop()
+	s.push(["array", {type: arr_type,length:arr_count[1], fields: {} }])
+	return p+2
+	
+
+}
 INST[0x59] = function(c,p,s,cls,l) { // dup
     var t = s.pop()
     s.push(t)
@@ -871,17 +970,17 @@ function runClass(cls) {
 
 
 try {
-    //var b = parseClass("World.class")
-    //var a = parseClass("ClassA.class")
+    var b = parseClass("ATMain.class")
+    var a = parseClass("ATMain2.class")
    // var c = parseClass("Test2.class")
-    var names = ["AnException", "AnotherException", "Caller",
-		 "HelloWriter", "Printer", 
-		 "Catcher1",
-		 "WorldWriter", "Writer"]
-    for (var c =0; c < names.length; ++c ) {
-	parseClass(names[c]+".class")
-    }
-    runClass(CLASSES["Catcher1"])
+   // var names = ["AnException", "AnotherException", "Caller",
+	//	 "HelloWriter", "Printer", 
+	//	 "Catcher1",
+	//	 "WorldWriter", "Writer"]
+    //for (var c =0; c < names.length; ++c ) {
+	//parseClass(names[c]+".class")
+   // }
+    runClass(CLASSES["ATMain2"])
 } catch(e) {
     if(e.rhinoException != null)
     {
