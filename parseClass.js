@@ -458,6 +458,13 @@ function istore(i) {
     return function(c, p, s, cls, l) { l[i] = s.pop(); return p+1 }
 }
 
+INST[0x36] = function(c, p, s, cls, l)//istore
+{
+	var idx= c[p+1];
+	l[idx] = s.pop();
+	return p+2;
+}
+
 INST[0x3b] = istore(0)
 INST[0x3c] = istore(1)
 INST[0x3d] = istore(2)
@@ -592,6 +599,55 @@ INST[0xa2] = if_cmp(function(v1,v2){return  v1[1] >= v2[1] } ) // if_icmpge
 INST[0xa3] = if_cmp(function(v1,v2){return  v1[1] > v2[1] } ) // if_icmpgt
 INST[0xa4] = if_cmp(function(v1,v2){return  v1[1] <= v2[1] } ) // if_icmple
 
+
+
+INST[0xaa] =function(c,p,s,cls,l) { //tableswitch
+	var ctr=1;
+	while((p+ctr)%4)
+	{
+		++ctr;
+	}
+	var bctr=0;
+	var bites=[];
+	for(bctr=0;bctr<12;++bctr)
+	{
+		bites[bctr]=c[p+ctr+bctr];
+	}	
+	var def = ((bites[0] << 24) | (bites[1] << 16) | (bites[2] << 8) | bites[3]);
+	var low = ((bites[4] << 24) | (bites[5]<< 16) | (bites[6] << 8) | bites[7]);
+	var high = ((bites[8] << 24) | (bites[9] << 16) | (bites[10] << 8) | bites[11]);
+	ctr = ctr+bctr;
+	var jmptblesize = high-low+1;
+	var jmptbl = [];
+	var acc = 0;
+	for(bctr=0;bctr<jmptblesize*4;++bctr)
+	{
+		if(bctr%4==0&&bctr>1)
+		{
+			jmptbl[(bctr/4)-1] = acc;
+			acc=0;
+		}
+		else
+		{
+			acc = (acc<<8|c[p+ctr+bctr]);
+		}
+	}
+	jmptbl[(bctr/4)-1] = acc;
+	var idx = s.pop();
+	var offset = 0;
+	if(idx[1]<low||idx[1]>high)
+	{
+		offset = def;
+	}
+	else
+	{
+		offset = jmptbl[idx[1]-low];
+	}
+	
+	print("--tbleswitch result"+(p+offset));
+	return p+offset;
+}
+
 function if_eq(func) {
     return function(c, p, s, cls, l) {
 	var v = s.pop();
@@ -626,6 +682,8 @@ INST[0x61]=INST[0x60]=INST[0x62]=INST[0x63]=iop(function(a,b){return a+b})//{ilf
 INST[0x64]=INST[0x65]=INST[0x66]=INST[0x67]=iop(function(a,b){return a-b})//{ilfd}sub
 INST[0x68]=INST[0x69]=INST[0x6a]=INST[0x6b]=iop(function(a,b){return a*b})//{ilfd}mul
 INST[0x6c]=INST[0x6d]=INST[0x6e]=INST[0x6f]=iop(function(a,b){return a/b})//{ilfd}div
+INST[0x70]=INST[0x71]=iop(function(a,b){return b%a})//{il}rem
+
 
 INST[0x84] = function(c, p, s, cls, l) {
     var idx = c[p+1]
@@ -970,8 +1028,8 @@ function runClass(cls) {
 
 
 try {
-    var b = parseClass("ATMain.class")
-    var a = parseClass("ATMain2.class")
+    var b = parseClass("Switcher2.class")
+   // var a = parseClass("ATMain2.class")
    // var c = parseClass("Test2.class")
    // var names = ["AnException", "AnotherException", "Caller",
 	//	 "HelloWriter", "Printer", 
@@ -980,7 +1038,7 @@ try {
     //for (var c =0; c < names.length; ++c ) {
 	//parseClass(names[c]+".class")
    // }
-    runClass(CLASSES["ATMain2"])
+    runClass(CLASSES["Switcher2"])
 } catch(e) {
     if(e.rhinoException != null)
     {
