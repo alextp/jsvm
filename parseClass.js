@@ -648,6 +648,56 @@ INST[0xaa] =function(c,p,s,cls,l) { //tableswitch
 	return p+offset;
 }
 
+INST[0xab] =function(c,p,s,cls,l) { //lookupswitch
+	var ctr=1;
+	while((p+ctr)%4)
+	{
+		++ctr;
+	}
+	var bctr=0;
+	var bites=[];
+	for(bctr=0;bctr<8;++bctr)
+	{
+		bites[bctr]=c[p+ctr+bctr];
+	}	
+	var def = ((bites[0] << 24) | (bites[1] << 16) | (bites[2] << 8) | bites[3]);
+	var npairs = ((bites[4] << 24) | (bites[5]<< 16) | (bites[6] << 8) | bites[7]);
+	ctr = ctr+bctr;
+	var jmptblesize = npairs*2;//store key and val in i,i+1
+	var jmptbl = [];
+	var acc = 0;
+	for(bctr=0;bctr<jmptblesize*4;++bctr)
+	{
+		if(bctr%4==0&&bctr>1)
+		{
+			jmptbl[(bctr/4)-1] = acc;
+			acc=0;
+		}
+		else
+		{
+			acc = (acc<<8|c[p+ctr+bctr]);
+		}
+	}
+	jmptbl[(bctr/4)-1] = acc;
+	var idx = s.pop();
+	var offset = 0;
+	var found= false;
+	for(bctr=0;bctr<2*npairs;bctr+=2)
+	{
+		if(jmptbl[bctr]==idx[1])
+		{
+			offset = jmptbl[bctr+1];
+			found = true;
+		}
+	}
+	if(!found)
+	{
+		offset = def;
+	}
+	print("--lookupswitch result"+(p+offset));
+	return p+offset;
+}
+
 function if_eq(func) {
     return function(c, p, s, cls, l) {
 	var v = s.pop();
@@ -1029,7 +1079,7 @@ function runClass(cls) {
 
 try {
     var b = parseClass("Switcher2.class")
-   // var a = parseClass("ATMain2.class")
+    var a = parseClass("Switcher.class")
    // var c = parseClass("Test2.class")
    // var names = ["AnException", "AnotherException", "Caller",
 	//	 "HelloWriter", "Printer", 
@@ -1038,7 +1088,7 @@ try {
     //for (var c =0; c < names.length; ++c ) {
 	//parseClass(names[c]+".class")
    // }
-    runClass(CLASSES["Switcher2"])
+    runClass(CLASSES["Switcher"])
 } catch(e) {
     if(e.rhinoException != null)
     {
