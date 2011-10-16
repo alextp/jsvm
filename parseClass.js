@@ -458,7 +458,7 @@ function istore(i) {
     return function(c, p, s, cls, l) { l[i] = s.pop(); return p+1 }
 }
 
-INST[0x36] = function(c, p, s, cls, l)//istore
+INST[0x3a] = INST[0x36]  = function(c, p, s, cls, l)//istore and astore
 {
 	var idx= c[p+1];
 	l[idx] = s.pop();
@@ -803,9 +803,18 @@ INST[0xbc] = function(c,p,s,cls,l) { // newarray
 	var arr_count = s.pop()
 	s.push(["array", {type: arr_type,length:arr_count[1], fields: {} }])
 	return p+2
-	
-
 }
+
+INST[0xbd] = function(c,p,s,cls,l) { // anewarray
+	var idx = (c[p+1]<<8)+c[p+2]
+	var arr_count = s.pop();
+	var m = cls.constants[idx];
+	var obj_type = m[0];
+	var obj_name = m[1];
+	s.push(["array", {type: obj_name,length:arr_count[1], fields: {} }])
+	return p+3
+}
+
 INST[0x59] = function(c,p,s,cls,l) { // dup
     var t = s.pop()
     s.push(t)
@@ -835,6 +844,72 @@ INST[0xb4] = function(c,p,s,cls,l) { // getfield
     s.push(obj[1].fields[fname])
     return p+3
 }
+
+function is_subclass(s,t)
+{
+	if(s==t)
+	{
+		return true;
+	}
+	else
+	{
+		//check if T is a superclass of S
+		var curclass = s;
+		var found = false;
+		while(curclass!=null)
+		{
+			var parclass = CLASSES[curclass].superName;	
+			if(parclass==t)
+			{
+				found = true;
+				break;
+			}
+			else
+			{
+				curclass = parclass;
+			}
+		}
+		return found;
+	}
+}
+
+INST[0xc0] = function(c,p,s,cls,l) {  //checkcast
+	var idx = (c[p+1]<<8)|c[p+2];
+	var m = cls.constants[idx];
+	var tgttype = m[0];
+	var tgtname = m[1];
+	var src = s.pop();
+	var srcname = src[1].cls;
+	print("--debug casting to--"+m);
+	var convertible = is_subclass(srcname,tgtname);
+	if(!convertible)
+	{
+		print("error! ClassCastException");
+		throw "ClassCastException"	
+	}
+	return p+3;
+}
+
+INST[0xc1] = function(c,p,s,cls,l) {  //instanceof
+	var idx = (c[p+1]<<8)|c[p+2];
+	var m = cls.constants[idx];
+	var tgttype = m[0];
+	var tgtname = m[1];
+	var src = s.pop();
+	var srcname = src[1].cls;
+	print("--debug casting to--"+m);
+	var convertible = is_subclass(srcname,tgtname);
+	if(convertible)
+	{
+		s.push(1);
+	}
+	else{
+		s.push(0);
+	}
+	return p+3;
+}
+
+
 
 INST[0xac] = function(c,p,s,cls,l) { // ireturn
     print(" --- debug -- returning int")
@@ -1078,17 +1153,12 @@ function runClass(cls) {
 
 
 try {
-    var b = parseClass("Switcher2.class")
-    var a = parseClass("Switcher.class")
    // var c = parseClass("Test2.class")
-   // var names = ["AnException", "AnotherException", "Caller",
-	//	 "HelloWriter", "Printer", 
-	//	 "Catcher1",
-	//	 "WorldWriter", "Writer"]
-    //for (var c =0; c < names.length; ++c ) {
-	//parseClass(names[c]+".class")
-   // }
-    runClass(CLASSES["Switcher"])
+    var names = ["CastTest","Animal","Cat","PCat","Dog"]
+    for (var c =0; c < names.length; ++c ) {
+	parseClass(names[c]+".class")
+    }
+    runClass(CLASSES["CastTest"])
 } catch(e) {
     if(e.rhinoException != null)
     {
