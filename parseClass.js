@@ -131,6 +131,15 @@ var ACC_SUPER = 0x0020 // Treat superclass methods specially when invoked by the
 var ACC_INTERFACE = 0x0200 // Is an interface, not a class.
 var ACC_ABSTRACT = 0x0400 // Declared abstract; may not be instantiated.
 
+var ATYPE_BOOLEAN	= 4
+var ATYPE_CHAR	  =   5
+var ATYPE_FLOAT	  =   6
+var ATYPE_DOUBLE	= 7
+var ATYPE_BYTE	  =   8
+var ATYPE_SHORT	  =   9
+var ATYPE_INT	  =  10
+var ATYPE_LONG	 =   11
+
 
 function readInterfaces(f, icount, ctable) {
     var ints = []	    
@@ -446,36 +455,9 @@ function iconst(i) {
     }
 }
 
-INST[0x02] = iconst(-1)
-INST[0x03] = iconst(0)
-INST[0x04] = iconst(1)
-INST[0x05] = iconst(2)
-INST[0x06] = iconst(3)
-INST[0x07] = iconst(4)
-INST[0x08] = iconst(5)
-
 function istore(i) {
     return function(c, p, s, cls, l) { l[i] = s.pop(); return p+1 }
 }
-
-INST[0x3a] = INST[0x36]  = function(c, p, s, cls, l)//istore and astore
-{
-	var idx= c[p+1];
-	l[idx] = s.pop();
-	return p+2;
-}
-
-INST[0x3b] = istore(0)
-INST[0x3c] = istore(1)
-INST[0x3d] = istore(2)
-INST[0x3e] = istore(3)
-
-
-INST[0x4b] = istore(0) // astore_0
-INST[0x4c] = istore(1) // astore_1
-INST[0x4d] = istore(2) // astore_2
-INST[0x4e] = istore(3) // astore_3
-
 
 
 function iastorecheck(c,p,s,cls,l,type)//common function to do the array store instructions
@@ -492,31 +474,9 @@ function iastorecheck(c,p,s,cls,l,type)//common function to do the array store i
 	return p+1;
 }
 
-INST[0x4f] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_INT)}//iastore
-INST[0x50] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_LONG)}//lastore
-INST[0x51] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_FLOAT)}//fastore
-INST[0x52] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_DOUBLE)}//dastore
-INST[0x54] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_BOOLEAN)}//bastore
-INST[0x55] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_CHAR)}//castore
-INST[0x56] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_SHORT)}//sastore
-
 function iload(i) {
     return function(c, p, s, cls, l) { s.push(l[i]); return p+1 }
 }
-
-INST[0x1a] = iload(0)
-INST[0x1b] = iload(1)
-INST[0x1c] = iload(2)
-INST[0x1d] = iload(3)
-INST[0x15] = function(c,p,s,cls,l) { s.push(l[c[p+1]]); return p+2} // iload
-
-INST[0x19] = function(c,p,s,cls,l) { s.push(l[c[p+1]]); return p+2} // aload
-INST[0x2a] = iload(0) // aload_0
-INST[0x2b] = iload(1) // aload_1
-INST[0x2c] = iload(2) // aload_2
-INST[0x2d] = iload(3) // aload_3
-
-
 
 function ialoadcheck(c,p,s,cls,l,t)//common function to do the array load instructions
 {
@@ -556,26 +516,6 @@ function ialoadcheck(c,p,s,cls,l,t)//common function to do the array load instru
 	return p+1;
 }
 
-INST[0x2e] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_INT)}//iaload
-INST[0x2f] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_LONG)}//laload
-INST[0x30] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_FLOAT)}//faload
-INST[0x31] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_DOUBLE)}//daload
-INST[0x33] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_BOOLEAN)}//baload
-INST[0x34] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_CHAR)}//caload
-INST[0x35] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_SHORT)}//saload
-
-
-INST[0x10] = function(c,p,s,cls,l) { 
-s.push(["int",c[p+1]]); 
-return p+2
-} // bipush
-INST[0x11] = function(c,p,s,cls,l) //sipush
-{
-var shrt = c[p+1]<<8|c[p+2]
-s.push(["short",shrt])
-return p+3
-}
-
 function if_cmp(func) {
     return function(c,p,s,cls,l) {
 	var v1 = s.pop();
@@ -590,16 +530,185 @@ function if_cmp(func) {
     }
 }
 
-INST[0xa5] = if_cmp(function(v1,v2){return  v1[1] === v2[1] }) // if_acmpeq
-INST[0xa6] = if_cmp(function(v1,v2){return  !(v1[1] === v2[1]) }) // if_acmpne
+function if_eq(func) {
+    return function(c, p, s, cls, l) {
+	var v = s.pop();
+	if (func(v)) {
+	    return p+signed((c[p+1] << 8) + c[p+2])
+	} else {
+	    return p+3
+	}
+    }
+}
+
+function iop(func) {
+    return function(c, p, s, cls, l) {
+	var v1 = s.pop()
+	var v2 = s.pop()
+	s.push([v1[0], func(v1[1], v2[1])])
+	print(" --- debug -- running op "+func+" with "+v1[1]+" and "+v2[1]+" res "+func(v1[1],v2[1]))
+	return p+1
+    }
+}
+
+function is_subclass(s,t)
+{
+	if(s==t)
+	{
+		return true;
+	}
+	else
+	{
+		//check if T is a superclass of S
+		var curclass = s;
+		var found = false;
+		while(curclass!=null)
+		{
+			var parclass = CLASSES[curclass].superName;	
+			if(parclass==t)
+			{
+				found = true;
+				break;
+			}
+			else
+			{
+				curclass = parclass;
+			}
+		}
+		return found;
+	}
+}
+
+function formatArgs(l) {
+    // let's make use of the fact that all args are in the newl vector
+    // in the function below
+    var r = []
+    for (var i = 1; i < l.length; ++i) {
+	r.push("newl["+i+"][1]")
+    }
+    print(" --- debug -- formatting args as '"+r.join(",")+"'")
+    return r.join(",")
+}
+
+function dotify(s) {
+    return s.replace("/", ".")
+}
+
+
+
+INST[0x02] = iconst(-1)
+INST[0x03] = iconst(0)
+INST[0x04] = iconst(1)
+INST[0x05] = iconst(2)
+INST[0x06] = iconst(3)
+INST[0x07] = iconst(4)
+INST[0x08] = iconst(5)
+
+INST[0x10] = function(c,p,s,cls,l) { 
+s.push(["int",c[p+1]]); 
+return p+2
+} // bipush
+INST[0x11] = function(c,p,s,cls,l) //sipush
+{
+var shrt = c[p+1]<<8|c[p+2]
+s.push(["short",shrt])
+return p+3
+}
+INST[0x12] = function(c,p,s,cls,l) { // ldc
+    var idx = c[p+1]
+    s.push(cls.constants[idx])
+    return p+2
+}
+
+INST[0x15] = function(c,p,s,cls,l) { s.push(l[c[p+1]]); return p+2} // iload
+
+INST[0x19] = function(c,p,s,cls,l) { s.push(l[c[p+1]]); return p+2} // aload
+INST[0x1a] = iload(0)
+INST[0x1b] = iload(1)
+INST[0x1c] = iload(2)
+INST[0x1d] = iload(3)
+
+INST[0x2a] = iload(0) // aload_0
+INST[0x2b] = iload(1) // aload_1
+INST[0x2c] = iload(2) // aload_2
+INST[0x2d] = iload(3) // aload_3
+INST[0x2e] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_INT)}//iaload
+INST[0x2f] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_LONG)}//laload
+INST[0x30] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_FLOAT)}//faload
+INST[0x31] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_DOUBLE)}//daload
+INST[0x33] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_BOOLEAN)}//baload
+INST[0x34] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_CHAR)}//caload
+INST[0x35] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_SHORT)}//saload
+
+
+
+INST[0x3a] = INST[0x36]  = function(c, p, s, cls, l) { //istore and astore
+	var idx= c[p+1];
+	l[idx] = s.pop();
+	return p+2;
+}
+INST[0x3b] = istore(0)
+INST[0x3c] = istore(1)
+INST[0x3d] = istore(2)
+INST[0x3e] = istore(3)
+
+
+INST[0x4b] = istore(0) // astore_0
+INST[0x4c] = istore(1) // astore_1
+INST[0x4d] = istore(2) // astore_2
+INST[0x4e] = istore(3) // astore_3
+INST[0x4f] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_INT)}//iastore
+INST[0x50] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_LONG)}//lastore
+INST[0x51] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_FLOAT)}//fastore
+INST[0x52] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_DOUBLE)}//dastore
+
+INST[0x54] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_BOOLEAN)}//bastore
+INST[0x55] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_CHAR)}//castore
+INST[0x56] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_SHORT)}//sastore
+
+INST[0x59] = function(c,p,s,cls,l) { // dup
+    var t = s.pop()
+    s.push(t)
+    s.push(t)
+    return p+1
+}
+
+INST[0x61]=INST[0x60]=INST[0x62]=INST[0x63]=iop(function(a,b){return a+b})//{ilfd}add
+INST[0x64]=INST[0x65]=INST[0x66]=INST[0x67]=iop(function(a,b){return a-b})//{ilfd}sub
+INST[0x68]=INST[0x69]=INST[0x6a]=INST[0x6b]=iop(function(a,b){return a*b})//{ilfd}mul
+INST[0x6c]=INST[0x6d]=INST[0x6e]=INST[0x6f]=iop(function(a,b){return a/b})//{ilfd}div
+INST[0x70]=INST[0x71]=iop(function(a,b){return b%a})//{il}rem
+
+INST[0x84] = function(c, p, s, cls, l) { // iinc
+    var idx = c[p+1]
+    var val = c[p+2]
+    l[idx][1] += val
+    return p+3
+}
+
+
 INST[0x9f] = if_cmp(function(v1,v2){return  v1[1] == v2[1] } ) // if_icmpeq
+
+INST[0x99] = if_eq(function(v) {return  v[1] == 0 }) // ifeq
+INST[0x9a] = if_eq(function(v) {return  v[1] != 0 }) // ifne
+INST[0x9b] = if_eq(function(v) {return  v[1] < 0 }) // iflt
+INST[0x9c] = if_eq(function(v) {return  v[1] >= 0 }) // ifge
+INST[0x9d] = if_eq(function(v) {return  v[1] > 0 }) // ifgt
+INST[0x9e] = if_eq(function(v) {return  v[1] <= 0 }) // ifle
+
 INST[0xa0] = if_cmp(function(v1,v2){return  !(v1[1] == v2[1]) } ) // if_icmpne
 INST[0xa1] = if_cmp(function(v1,v2){return  v1[1] < v2[1] } ) // if_icmplt
 INST[0xa2] = if_cmp(function(v1,v2){return  v1[1] >= v2[1] } ) // if_icmpge
 INST[0xa3] = if_cmp(function(v1,v2){return  v1[1] > v2[1] } ) // if_icmpgt
 INST[0xa4] = if_cmp(function(v1,v2){return  v1[1] <= v2[1] } ) // if_icmple
-
-
+INST[0xa5] = if_cmp(function(v1,v2){return  v1[1] === v2[1] }) // if_acmpeq
+INST[0xa6] = if_cmp(function(v1,v2){return  !(v1[1] === v2[1]) }) // if_acmpne
+INST[0xa7] = function(c, p, s, cls, l) { // goto
+    print(" --- debug -- bytes "+c[p+1]+" and "+c[p+2]+"")
+    var off = signed((c[p+1] << 8) + c[p+2])
+    print(" --- debug -- offset "+off)
+    return off + p+1
+}
 
 INST[0xaa] =function(c,p,s,cls,l) { //tableswitch
 	var ctr=1;
@@ -647,7 +756,6 @@ INST[0xaa] =function(c,p,s,cls,l) { //tableswitch
 	print("--tbleswitch result"+(p+offset));
 	return p+offset;
 }
-
 INST[0xab] =function(c,p,s,cls,l) { //lookupswitch
 	var ctr=1;
 	while((p+ctr)%4)
@@ -697,59 +805,16 @@ INST[0xab] =function(c,p,s,cls,l) { //lookupswitch
 	print("--lookupswitch result"+(p+offset));
 	return p+offset;
 }
-
-function if_eq(func) {
-    return function(c, p, s, cls, l) {
-	var v = s.pop();
-	if (func(v)) {
-	    return p+signed((c[p+1] << 8) + c[p+2])
-	} else {
-	    return p+3
-	}
-    }
-}
-
-INST[0x99] = if_eq(function(v) {return  v[1] == 0 }) // ifeq
-INST[0x9a] = if_eq(function(v) {return  v[1] != 0 }) // ifne
-INST[0x9b] = if_eq(function(v) {return  v[1] < 0 }) // iflt
-INST[0x9c] = if_eq(function(v) {return  v[1] >= 0 }) // ifge
-INST[0x9d] = if_eq(function(v) {return  v[1] > 0 }) // ifgt
-INST[0x9e] = if_eq(function(v) {return  v[1] <= 0 }) // ifle
-INST[0xc7] = if_eq(function(v) {return  v[1] != null }) // ifnonnull
-INST[0xc6] = if_eq(function(v) {return  v[1] == null}) // ifnull
-
-function iop(func) {
-    return function(c, p, s, cls, l) {
-	var v1 = s.pop()
-	var v2 = s.pop()
-	s.push([v1[0], func(v1[1], v2[1])])
-	print(" --- debug -- running op "+func+" with "+v1[1]+" and "+v2[1]+" res "+func(v1[1],v2[1]))
-	return p+1
-    }
-}
-
-INST[0x61]=INST[0x60]=INST[0x62]=INST[0x63]=iop(function(a,b){return a+b})//{ilfd}add
-INST[0x64]=INST[0x65]=INST[0x66]=INST[0x67]=iop(function(a,b){return a-b})//{ilfd}sub
-INST[0x68]=INST[0x69]=INST[0x6a]=INST[0x6b]=iop(function(a,b){return a*b})//{ilfd}mul
-INST[0x6c]=INST[0x6d]=INST[0x6e]=INST[0x6f]=iop(function(a,b){return a/b})//{ilfd}div
-INST[0x70]=INST[0x71]=iop(function(a,b){return b%a})//{il}rem
-
-
-INST[0x84] = function(c, p, s, cls, l) {
-    var idx = c[p+1]
-    var val = c[p+2]
-    l[idx][1] += val
-    return p+3
+INST[0xac] = function(c,p,s,cls,l) { // ireturn
+    print(" --- debug -- returning int")
+    return "ireturn"
 }
 
 
-INST[0xa7] = function(c, p, s, cls, l) { // goto
-    print(" --- debug -- bytes "+c[p+1]+" and "+c[p+2]+"")
-    var off = signed((c[p+1] << 8) + c[p+2])
-    print(" --- debug -- offset "+off)
-    return off + p+1
+INST[0xb1] = function(c,p,s,cls,l) { // return
+    print(" --- debug -- returning")
+    return "return"
 }
-
 INST[0xb2] = function(c,p,s,cls,l) { // getstatic
     var idx = (c[p+1] << 8) + c[p+2]
     var fref = cls.constants[idx]
@@ -766,68 +831,13 @@ INST[0xb2] = function(c,p,s,cls,l) { // getstatic
     return p+3
 }
 
-INST[0xbb] = function(c,p,s,cls,l) { // new
-    var idx = (c[p+1] << 8) + c[p+2]
-    var clsname = cls.constants[idx][1]
-
-    if (CLASSES[clsname]) {
-	// this means we know which class it is
- 	print(" ---- debug ---- creating object "+clsname)
-	var obj = {type: clsname}
-	var newcls = CLASSES[clsname]
-	s.push(["obj", {cls: clsname, fields: {}, vtable: getVTable(newcls)}])
-    } else {
-	// since we haven't loaded this class we fall back to the JVM
-	// classes this is harder than it looks, as JVM classes are
-	// initialized and constructed in one shot. The solution then
-	// is, I believe, to just push now an empty symbol onto the
-	// stack and only create the object when we come to
-	// invokespecial
-	print(" ---- debug ---- loading jvm class "+clsname)
-	s.push(["NEWjvmobj", clsname])
-    }
+INST[0xb4] = function(c,p,s,cls,l) { // getfield
+    var obj = s.pop()
+    var fname = cls.constants[(c[p+1] << 8) + c[p+2]][2][1]
+    assert(obj[0] == "obj")
+    s.push(obj[1].fields[fname])
     return p+3
 }
-
-var ATYPE_BOOLEAN	= 4
-var ATYPE_CHAR	  =   5
-var ATYPE_FLOAT	  =   6
-var ATYPE_DOUBLE	= 7
-var ATYPE_BYTE	  =   8
-var ATYPE_SHORT	  =   9
-var ATYPE_INT	  =  10
-var ATYPE_LONG	 =   11
-
-INST[0xbc] = function(c,p,s,cls,l) { // newarray
-	var arr_type = c[p+1]
-	var arr_count = s.pop()
-	s.push(["array", {type: arr_type,length:arr_count[1], fields: {} }])
-	return p+2
-}
-
-INST[0xbd] = function(c,p,s,cls,l) { // anewarray
-	var idx = (c[p+1]<<8)+c[p+2]
-	var arr_count = s.pop();
-	var m = cls.constants[idx];
-	var obj_type = m[0];
-	var obj_name = m[1];
-	s.push(["array", {type: obj_name,length:arr_count[1], fields: {} }])
-	return p+3
-}
-
-INST[0x59] = function(c,p,s,cls,l) { // dup
-    var t = s.pop()
-    s.push(t)
-    s.push(t)
-    return p+1
-}
-
-INST[0x12] = function(c,p,s,cls,l) { // ldc
-    var idx = c[p+1]
-    s.push(cls.constants[idx])
-    return p+2
-}
-
 INST[0xb5] = function(c,p,s,cls,l) { // putfield
     var val = s.pop()
     var obj = s.pop()
@@ -836,115 +846,10 @@ INST[0xb5] = function(c,p,s,cls,l) { // putfield
     obj[1].fields[fname] = val
     return p+3
 }
-
-INST[0xb4] = function(c,p,s,cls,l) { // getfield
-    var obj = s.pop()
-    var fname = cls.constants[(c[p+1] << 8) + c[p+2]][2][1]
-    assert(obj[0] == "obj")
-    s.push(obj[1].fields[fname])
-    return p+3
-}
-
-function is_subclass(s,t)
-{
-	if(s==t)
-	{
-		return true;
-	}
-	else
-	{
-		//check if T is a superclass of S
-		var curclass = s;
-		var found = false;
-		while(curclass!=null)
-		{
-			var parclass = CLASSES[curclass].superName;	
-			if(parclass==t)
-			{
-				found = true;
-				break;
-			}
-			else
-			{
-				curclass = parclass;
-			}
-		}
-		return found;
-	}
-}
-
-INST[0xc0] = function(c,p,s,cls,l) {  //checkcast
-	var idx = (c[p+1]<<8)|c[p+2];
-	var m = cls.constants[idx];
-	var tgttype = m[0];
-	var tgtname = m[1];
-	var src = s.pop();
-	var srcname = src[1].cls;
-	print("--debug casting to--"+m);
-	var convertible = is_subclass(srcname,tgtname);
-	if(!convertible)
-	{
-		print("error! ClassCastException");
-		throw "ClassCastException"	
-	}
-	return p+3;
-}
-
-INST[0xc1] = function(c,p,s,cls,l) {  //instanceof
-	var idx = (c[p+1]<<8)|c[p+2];
-	var m = cls.constants[idx];
-	var tgttype = m[0];
-	var tgtname = m[1];
-	var src = s.pop();
-	var srcname = src[1].cls;
-	print("--debug casting to--"+m);
-	var convertible = is_subclass(srcname,tgtname);
-	if(convertible)
-	{
-		s.push(1);
-	}
-	else{
-		s.push(0);
-	}
-	return p+3;
-}
-
-
-
-INST[0xac] = function(c,p,s,cls,l) { // ireturn
-    print(" --- debug -- returning int")
-    return "ireturn"
-}
-
-
-INST[0xb1] = function(c,p,s,cls,l) { // return
-    print(" --- debug -- returning")
-    return "return"
-}
-
-function formatArgs(l) {
-    // let's make use of the fact that all args are in the newl vector
-    // in the function below
-    var r = []
-    for (var i = 1; i < l.length; ++i) {
-	r.push("newl["+i+"][1]")
-    }
-    print(" --- debug -- formatting args as '"+r.join(",")+"'")
-    return r.join(",")
-}
-
-function dotify(s) {
-    return s.replace("/", ".")
-}
-
-
-
-INST[0xb8] = function(c,p,s,cls,l) { // invokestatic
+INST[0xb6] = function(c,p,s,cls,l) { // invokevirtual
     var idx = (c[p+1] << 8) + c[p+2]
     var m = cls.constants[idx]
     print(" --- debug -- this is "+m)
-    var mcls = m[1]
-    print(" --- debug -- method class is "+mcls)
     var mname = m[2][1]
     var mtype = m[2][2]
     print(" --- debug -- mname is "+mname+" mtype is "+mtype+" ")
@@ -954,30 +859,39 @@ INST[0xb8] = function(c,p,s,cls,l) { // invokestatic
     else nargs = nargs.length
     print(" --- debug --- passing "+nargs+" args")
     var newl = []
-    for (var i = nargs-1; i >= 0; --i) {
+    for (var i = nargs; i >= 0; --i) {
 	newl.push(s.pop())
     }
     newl.reverse()
-    if (CLASSES[mcls]) { // we're in our land
-	var method = getVTable(CLASSES[mcls])[mname + "||"+mtype]
+    var o = newl[0]
+    if (o[0] == "obj") { // as far as I know there is no difference
+			 // here with invokespecial as far as not
+			 // checking for permission is concerned
+	var obj = o[1]
+	var clsname = obj.cls
+	var method = obj.vtable[mname + "||"+mtype]
 	var ret = null
-	if (method.jsfunc)
-	    ret = method.jsfunc(method, CLASSES[method.cls], newl)
+	if (method.jscode)
+	    ret = method.jscode(method, CLASSES[method.cls], newl)
 	else
 	    ret = runMethod(method, CLASSES[method.cls], newl)
 	if (ret == "throw") {
 	    s.push(newl[0])
-	    return "throw"
-	} else if (ret != "void")
-	    s.push(ret)
+	    return ret
+	}
+	s.push(ret)
 	return p+3
     } else {
-	// we're in jvm-land, so who knows what to do. FIXME
-	assert(1==2)
+	// we're in JVM-land, but now with no constructors
+	print(" --- debug -- args are "+newl+" formatted as "+formatArgs(newl))
+	var code = " var ret = newl[0][1]."+mname+"("+formatArgs(newl)+")"
+	print(" --- debug the code is '"+code+"'")
+	print(" ----")
+	eval(code)
+	s.push(["jvmobj", ret])
+	return p+3
     }
 }
-
-
 INST[0xb7] = function(c,p,s,cls,l) { // invokespecial
     var idx = (c[p+1] << 8) + c[p+2]
     var m = cls.constants[idx]
@@ -1026,11 +940,12 @@ INST[0xb7] = function(c,p,s,cls,l) { // invokespecial
 	return p+3
     }
 }
-
-INST[0xb6] = function(c,p,s,cls,l) { // invokevirtual
+INST[0xb8] = function(c,p,s,cls,l) { // invokestatic
     var idx = (c[p+1] << 8) + c[p+2]
     var m = cls.constants[idx]
     print(" --- debug -- this is "+m)
+    var mcls = m[1]
+    print(" --- debug -- method class is "+mcls)
     var mname = m[2][1]
     var mtype = m[2][2]
     print(" --- debug -- mname is "+mname+" mtype is "+mtype+" ")
@@ -1040,38 +955,64 @@ INST[0xb6] = function(c,p,s,cls,l) { // invokevirtual
     else nargs = nargs.length
     print(" --- debug --- passing "+nargs+" args")
     var newl = []
-    for (var i = nargs; i >= 0; --i) {
+    for (var i = nargs-1; i >= 0; --i) {
 	newl.push(s.pop())
     }
     newl.reverse()
-    var o = newl[0]
-    if (o[0] == "obj") { // as far as I know there is no difference
-			 // here with invokespecial as far as not
-			 // checking for permission is concerned
-	var obj = o[1]
-	var clsname = obj.cls
-	var method = obj.vtable[mname + "||"+mtype]
+    if (CLASSES[mcls]) { // we're in our land
+	var method = getVTable(CLASSES[mcls])[mname + "||"+mtype]
 	var ret = null
-	if (method.jscode)
-	    ret = method.jscode(method, CLASSES[method.cls], newl)
+	if (method.jsfunc)
+	    ret = method.jsfunc(method, CLASSES[method.cls], newl)
 	else
 	    ret = runMethod(method, CLASSES[method.cls], newl)
 	if (ret == "throw") {
 	    s.push(newl[0])
-	    return ret
-	}
-	s.push(ret)
+	    return "throw"
+	} else if (ret != "void")
+	    s.push(ret)
 	return p+3
     } else {
-	// we're in JVM-land, but now with no constructors
-	print(" --- debug -- args are "+newl+" formatted as "+formatArgs(newl))
-	var code = " var ret = newl[0][1]."+mname+"("+formatArgs(newl)+")"
-	print(" --- debug the code is '"+code+"'")
-	print(" ----")
-	eval(code)
-	s.push(["jvmobj", ret])
-	return p+3
+	// we're in jvm-land, so who knows what to do. FIXME
+	assert(1==2)
     }
+}
+
+INST[0xbb] = function(c,p,s,cls,l) { // new
+    var idx = (c[p+1] << 8) + c[p+2]
+    var clsname = cls.constants[idx][1]
+    if (CLASSES[clsname]) {
+	// this means we know which class it is
+ 	print(" ---- debug ---- creating object "+clsname)
+	var obj = {type: clsname}
+	var newcls = CLASSES[clsname]
+	s.push(["obj", {cls: clsname, fields: {}, vtable: getVTable(newcls)}])
+    } else {
+	// since we haven't loaded this class we fall back to the JVM
+	// classes this is harder than it looks, as JVM classes are
+	// initialized and constructed in one shot. The solution then
+	// is, I believe, to just push now an empty symbol onto the
+	// stack and only create the object when we come to
+	// invokespecial
+	print(" ---- debug ---- loading jvm class "+clsname)
+	s.push(["NEWjvmobj", clsname])
+    }
+    return p+3
+}
+INST[0xbc] = function(c,p,s,cls,l) { // newarray
+	var arr_type = c[p+1]
+	var arr_count = s.pop()
+	s.push(["array", {type: arr_type,length:arr_count[1], fields: {} }])
+	return p+2
+}
+INST[0xbd] = function(c,p,s,cls,l) { // anewarray
+	var idx = (c[p+1]<<8)+c[p+2]
+	var arr_count = s.pop();
+	var m = cls.constants[idx];
+	var obj_type = m[0];
+	var obj_name = m[1];
+	s.push(["array", {type: obj_name,length:arr_count[1], fields: {} }])
+	return p+3
 }
 
 INST[0xbf] = function(c,p,s,cls,l) { // athrow
@@ -1080,6 +1021,57 @@ INST[0xbf] = function(c,p,s,cls,l) { // athrow
     s.push(ex)
     return "throw"
 }
+
+INST[0xc0] = function(c,p,s,cls,l) {  //checkcast
+	var idx = (c[p+1]<<8)|c[p+2];
+	var m = cls.constants[idx];
+	var tgttype = m[0];
+	var tgtname = m[1];
+	var src = s.pop();
+	var srcname = src[1].cls;
+	print("--debug casting to--"+m);
+	var convertible = is_subclass(srcname,tgtname);
+	if(!convertible)
+	{
+		print("error! ClassCastException");
+		throw "ClassCastException"	
+	}
+	return p+3;
+}
+INST[0xc1] = function(c,p,s,cls,l) {  //instanceof
+	var idx = (c[p+1]<<8)|c[p+2];
+	var m = cls.constants[idx];
+	var tgttype = m[0];
+	var tgtname = m[1];
+	var src = s.pop();
+	var srcname = src[1].cls;
+	print("--debug casting to--"+m);
+	var convertible = is_subclass(srcname,tgtname);
+	if(convertible)
+	{
+		s.push(1);
+	}
+	else{
+		s.push(0);
+	}
+	return p+3;
+}
+
+INST[0xc6] = if_eq(function(v) {return  v[1] == null}) // ifnull
+INST[0xc7] = if_eq(function(v) {return  v[1] != null }) // ifnonnull
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 function matchType(extype, handler) {
     print(" --- debug -- matching "+extype+" with "+handler)
