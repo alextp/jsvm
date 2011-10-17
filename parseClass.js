@@ -645,8 +645,8 @@ INST[0x0a] = lconst(1)
 INST[0x0b] = fconst(0)
 INST[0x0c] = fconst(1)
 INST[0x0d] = fconst(2)
-INST[0x0e] = dconst(0)
-INST[0x0f] = dconst(1)
+INST[0x0e] = fconst(0)
+INST[0x0f] = fconst(1)
 INST[0x10] = function(c,p,s,cls,l) { // bipush
 s.push(["int",c[p+1]]); 
 return p+2
@@ -838,7 +838,7 @@ INST[0xa7] = function(c, p, s, cls, l) { // goto
     print(" --- debug -- bytes "+c[p+1]+" and "+c[p+2]+"")
     var off = signed((c[p+1] << 8) + c[p+2])
     print(" --- debug -- offset "+off)
-    return off + p+1
+    return off + p//+1
 }
 INST[0xa8] = function(c,p,s,cls,l) { // jsr
     print(" --- debug -- bytes "+c[p+1]+" and "+c[p+2]+"")
@@ -1014,8 +1014,8 @@ INST[0xb6] = function(c,p,s,cls,l) { // invokevirtual
 	if (ret == "throw") {
 	    s.push(newl[0])
 	    return ret
-	}
-	s.push(ret)
+	} else if (ret != "void") 
+	    s.push(ret)
 	return p+3
     } else {
 	// we're in JVM-land, but now with no constructors
@@ -1301,11 +1301,11 @@ function runClass(cls) {
 
 try {
    // var c = parseClass("Test2.class")
-    var names = ["CastTest","Animal","Cat","PCat","Dog"]
+    var names = ["AnException", "AnotherException", "Catcher1"]
     for (var c =0; c < names.length; ++c ) {
 	parseClass(names[c]+".class")
     }
-    runClass(CLASSES["CastTest"])
+    runClass(CLASSES["Catcher1"])
 } catch(e) {
     if(e.rhinoException != null)
     {
