@@ -139,7 +139,7 @@ var ATYPE_BYTE	  =   8
 var ATYPE_SHORT	  =   9
 var ATYPE_INT	  =  10
 var ATYPE_LONG	 =   11
-
+var ATYPE_OBJ = 12
 
 function readInterfaces(f, icount, ctable) {
     var ints = []	    
@@ -326,6 +326,7 @@ function parseClass(fname) {
 	vtable: null,
 	flags: aflags,
 	superName: supr,
+	stat: {},
 	interfaces: interfaces,
 	fields: fields,
 	methods: methods,
@@ -364,6 +365,7 @@ CLASSES["java/lang/Object"] = {
     vtable: null,
     interfaces: [],
     fields: [],
+    stat: {},
     methods: [
 	makeJsMethod("<init>", "()V", function(m, cls, locals) {
 	    COUNT_OBJ += 1
@@ -396,7 +398,8 @@ CLASSES["java/lang/Serializable"] = {
     vtable: null,
     interfaces: [],
     fields: [],
-    methods: []
+    methods: [],
+    stat: {}
 }
 
 CLASSES["java/lang/Throwable"] = {
@@ -405,6 +408,7 @@ CLASSES["java/lang/Throwable"] = {
     superName:"java/lang/Object",
     interfaces:["java/lang/Serializable"],
     fields: [],
+    stat: {},
     methods: [
 	//  Throwable	fillInStackTrace() 
 	//  Throwable	getCause() 
@@ -430,6 +434,7 @@ CLASSES["java/lang/Exception"] = {
     flags: 0,
     superName: "java/lang/Throwable",
     interfaces: [],
+    stat: {},
     methods: [
 	makeJsMethod("<init>", "()V", function(m, cls, locals) {
 	}, "java/lang/Object"),
@@ -452,6 +457,20 @@ function iconst(i) {
     return function(c,p, s, cls, l) { 
 	s.push(["int", i]) 
 	return p+1 
+    }
+}
+
+function lconst(i) {
+    return function(c,p,s,cls,l) {
+	s.push(["long", i])
+	return p+1
+    }
+}
+
+function fconst(i) {
+    return function(c,p,s,cls,l) {
+	s.push(["float", i])
+	return p+1
     }
 }
 
@@ -478,42 +497,41 @@ function iload(i) {
     return function(c, p, s, cls, l) { s.push(l[i]); return p+1 }
 }
 
-function ialoadcheck(c,p,s,cls,l,t)//common function to do the array load instructions
-{
-	var idx = s.pop();
-	var arrayref  = s.pop();
-	var type= "unknown";
-	switch(t)
-	{
-		case ATYPE_INT:
-		type = "int"
-		break;
-		case ATYPE_LONG:
-		type = "int"
-		break;
-		case ATYPE_FLOAT:
-		type = "float"
-		break;
-		case ATYPE_DOUBLE:
-		type = "double"
-		break;
-		case ATYPE_BOOLEAN:
-		type = "boolean"
-		break;
-		case ATYPE_CHAR:
-		type = "char"
-		break;
-		case ATYPE_SHORT:
-		type = "short"
-		break;
-		
-	}
-	if(arrayref[0]=="array"&& idx[1]<arrayref[1]["length"])
-	{
-		var val = arrayref[1]["fields"][idx[1]];
-		s.push([type,val]);
-	}
-	return p+1;
+function ialoadcheck(c,p,s,cls,l,t) {//common function to do the array load instructions
+    var idx = s.pop();
+    var arrayref  = s.pop();
+    var type= "unknown";
+    switch(t) {
+    case ATYPE_INT:
+	type = "int"
+	break;
+    case ATYPE_LONG:
+	type = "int"
+	break;
+    case ATYPE_FLOAT:
+	type = "float"
+	break;
+    case ATYPE_DOUBLE:
+	type = "double"
+	break;
+    case ATYPE_BOOLEAN:
+	type = "boolean"
+	break;
+    case ATYPE_CHAR:
+	type = "char"
+	break;
+    case ATYPE_SHORT:
+	type = "short"
+	break;
+    case ATYPE_OBJ:
+	type = "obj"
+	break
+    }
+    if(arrayref[0]=="array"&& idx[1]<arrayref[1]["length"]) {
+	var val = arrayref[1]["fields"][idx[1]];
+	s.push([type,val]);
+    }
+    return p+1;
 }
 
 function if_cmp(func) {
@@ -550,6 +568,16 @@ function iop(func) {
 	return p+1
     }
 }
+
+function uiop(func) {
+    return function(c, p, s, cls, l) {
+	var v = s.pop()
+	s.push([v[0], func(v[1])])
+	print(" --- debug -- running op "+func+" with "+v1[1]+" and "+v2[1]+" res "+func(v1[1],v2[1]))
+	return p+1
+    }
+}
+
 
 function is_subclass(s,t)
 {
@@ -594,6 +622,15 @@ function dotify(s) {
     return s.replace("/", ".")
 }
 
+function convert(type) {
+    return function(c,p,s,cls,l) {
+	var orig = s.pop()
+	s.push([type, orig[1]]) // "cast"
+	return p+1
+    }
+}
+
+
 
 
 INST[0x02] = iconst(-1)
@@ -603,11 +640,17 @@ INST[0x05] = iconst(2)
 INST[0x06] = iconst(3)
 INST[0x07] = iconst(4)
 INST[0x08] = iconst(5)
-
-INST[0x10] = function(c,p,s,cls,l) { 
+INST[0x09] = lconst(0)
+INST[0x0a] = lconst(1)
+INST[0x0b] = fconst(0)
+INST[0x0c] = fconst(1)
+INST[0x0d] = fconst(2)
+INST[0x0e] = dconst(0)
+INST[0x0f] = dconst(1)
+INST[0x10] = function(c,p,s,cls,l) { // bipush
 s.push(["int",c[p+1]]); 
 return p+2
-} // bipush
+} 
 INST[0x11] = function(c,p,s,cls,l) //sipush
 {
 var shrt = c[p+1]<<8|c[p+2]
@@ -619,15 +662,33 @@ INST[0x12] = function(c,p,s,cls,l) { // ldc
     s.push(cls.constants[idx])
     return p+2
 }
-
+INST[0x13] = function(c,p,s,cls,l) { // ldc_w
+    var idx = (c[p+1] << 8) + c[p+2]
+    s.push(cls.constants[idx])
+    return p+3
+}
+INST[0x14] = INST[0x13] // ldc2_w
 INST[0x15] = function(c,p,s,cls,l) { s.push(l[c[p+1]]); return p+2} // iload
-
-INST[0x19] = function(c,p,s,cls,l) { s.push(l[c[p+1]]); return p+2} // aload
+INST[0x16] = INST[0x15] // lload
+INST[0x17] = INST[0x15] // fload
+INST[0x18] = INST[0x15] // dload
+INST[0x19] = INST[0x15] // aload
 INST[0x1a] = iload(0)
 INST[0x1b] = iload(1)
 INST[0x1c] = iload(2)
 INST[0x1d] = iload(3)
-
+INST[0x1e] = iload(0) // lload_0
+INST[0x1f] = iload(1) // lload_1
+INST[0x20] = iload(2) // lload_2
+INST[0x21] = iload(3) // lload_3
+INST[0x22] = iload(0) // fload_0
+INST[0x23] = iload(1) // fload_1
+INST[0x24] = iload(2) // fload_2
+INST[0x25] = iload(3) // fload_3
+INST[0x26] = iload(0) // dload_0
+INST[0x27] = iload(1) // dload_1
+INST[0x28] = iload(2) // dload_2
+INST[0x29] = iload(3) // dload_3
 INST[0x2a] = iload(0) // aload_0
 INST[0x2b] = iload(1) // aload_1
 INST[0x2c] = iload(2) // aload_2
@@ -639,63 +700,133 @@ INST[0x31] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_DOUBLE)}
 INST[0x33] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_BOOLEAN)}//baload
 INST[0x34] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_CHAR)}//caload
 INST[0x35] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_SHORT)}//saload
-
-
-
-INST[0x3a] = INST[0x36]  = function(c, p, s, cls, l) { //istore and astore
-	var idx= c[p+1];
-	l[idx] = s.pop();
-	return p+2;
+INST[0x36] = function(c,p,s,cls,l) { // istore
+    var idx = c[p+1]
+    l[idx] = s.pop()
 }
+INST[0x37] = INST[0x36] // lstore
+INST[0x38] = INST[0x36] // fstore
+INST[0x39] = INST[0x36] // dstore
+INST[0x3a] = INST[0x36] // astore
 INST[0x3b] = istore(0)
 INST[0x3c] = istore(1)
 INST[0x3d] = istore(2)
 INST[0x3e] = istore(3)
-
-
-INST[0x4b] = istore(0) // astore_0
-INST[0x4c] = istore(1) // astore_1
-INST[0x4d] = istore(2) // astore_2
-INST[0x4e] = istore(3) // astore_3
+INST[0x3f] = INST[0x3b] // lstore_0
+INST[0x40] = INST[0x3c] // lstore_1
+INST[0x41] = INST[0x3d] // lstore_2
+INST[0x42] = INST[0x3e] // lstore_3
+INST[0x43] = INST[0x3b] // fstore_0
+INST[0x44] = INST[0x3c] // fstore_1
+INST[0x45] = INST[0x3d] // fstore_2
+INST[0x46] = INST[0x3e] // fstore_3
+INST[0x47] = INST[0x3b] // dstore_0
+INST[0x48] = INST[0x3c] // dstore_1
+INST[0x49] = INST[0x3d] // dstore_2
+INST[0x4a] = INST[0x3e] // dstore_3
+INST[0x4b] = INST[0x3b] // astore_0
+INST[0x4c] = INST[0x3c] // astore_1
+INST[0x4d] = INST[0x3d] // astore_2
+INST[0x4e] = INST[0x3e] // astore_3
 INST[0x4f] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_INT)}//iastore
 INST[0x50] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_LONG)}//lastore
 INST[0x51] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_FLOAT)}//fastore
 INST[0x52] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_DOUBLE)}//dastore
-
+INST[0x53] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_OBJ )}//aastore
 INST[0x54] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_BOOLEAN)}//bastore
 INST[0x55] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_CHAR)}//castore
 INST[0x56] = function(c,p,s,cls,l){return iastorecheck(c,p,s,cls,l,ATYPE_SHORT)}//sastore
-
+INST[0x57] = function(c,p,s,cls,l){ s.pop(); return p+1} // pop
+INST[0x58] = function(c,p,s,cls,l){ s.pop(); s.pop(); return p+1} // pop2
 INST[0x59] = function(c,p,s,cls,l) { // dup
     var t = s.pop()
     s.push(t)
     s.push(t)
     return p+1
 }
+INST[0x5a] = function(c,p,s,cls,l) { // dup_x1
+    var v1 = s.pop()
+    var v2 = s.pop()
+    s.push(v1)
+    s.push(v2)
+    s.push(v1)
+    return p+1
+}
+// do not implement dup_x2 because we don't want to bother with checking longness
 
-INST[0x61]=INST[0x60]=INST[0x62]=INST[0x63]=iop(function(a,b){return a+b})//{ilfd}add
+INST[0x5c] = function(c,p,s,cls,l) { // dup2
+    var v1 = s.pop()
+    var v2 = s.pop()
+    s.push(v2); s.push(v1); s.push(v2); s.push(v1)
+    return p+1
+}
+INST[0x5d] = function(c,p,s,cls,l) { // dup2_x1
+    var v1 = s.pop()
+    var v2 = s.pop()
+    var v3 = s.pop()
+    s.push(v2); s.push(v1); s.push(v3); s.push(v2); s.push(v1)
+    return p+1
+}
+// likewise with dup2_x2 as with dup_x2
+
+INST[0x5f] = function(c,p,s,cls,l) { // swap
+    var v1 = s.pop()
+    var v2 = s.pop()
+    s.push(v1); s.push(v2)
+    return p+1
+}
+INST[0x60]=INST[0x61]=INST[0x62]=INST[0x63]=iop(function(a,b){return a+b})//{ilfd}add
 INST[0x64]=INST[0x65]=INST[0x66]=INST[0x67]=iop(function(a,b){return a-b})//{ilfd}sub
 INST[0x68]=INST[0x69]=INST[0x6a]=INST[0x6b]=iop(function(a,b){return a*b})//{ilfd}mul
 INST[0x6c]=INST[0x6d]=INST[0x6e]=INST[0x6f]=iop(function(a,b){return a/b})//{ilfd}div
-INST[0x70]=INST[0x71]=iop(function(a,b){return b%a})//{il}rem
-
+INST[0x70]=INST[0x71]=INST[0x72]=INST[0x73]=iop(function(a,b){return b%a})//{ilfd}rem
+INST[0x74]=INST[0x75]=INST[0x76]=INST[0x77]=uiop(function(a){return -a}) // {ilfd}neg
+INST[0x78]=INST[0x79]=iop(function(a,b){return b << a})//{il}shl
+INST[0x7a]=INST[0x7b]=iop(function(a,b){return b >> a})//{il}shr
+INST[0x7c]=INST[0x7d]=iop(function(a,b){return b << a})// u{il}shl FIXME: deal with overflow???
+INST[0x7e]=INST[0x7f]=iop(function(a,b){return a & b})// {il}and 
+INST[0x80]=INST[0x81]=iop(function(a,b){return a | b})// {il}or
+INST[0x82]=INST[0x83]=iop(function(a,b){return a ^ b})// {il}or
 INST[0x84] = function(c, p, s, cls, l) { // iinc
     var idx = c[p+1]
     var val = c[p+2]
     l[idx][1] += val
     return p+3
 }
-
-
-INST[0x9f] = if_cmp(function(v1,v2){return  v1[1] == v2[1] } ) // if_icmpeq
-
+INST[0x85] = convert("long") // i2l
+INST[0x86] = convert("float") // i2f
+INST[0x87] = convert("double") // i2d
+INST[0x88] = convert("int") // l2i
+INST[0x89] = convert("float") // l2f
+INST[0x8a] = convert("double") // l2d
+INST[0x8b] = convert("int") // f2i
+INST[0x8c] = convert("long") // f2l
+INST[0x8d] = convert("double") // f2d
+INST[0x8e] = convert("int") // d2i
+INST[0x8f] = convert("long") // d2l
+INST[0x90] = convert("float") // d2f
+INST[0x91] = convert("byte") // i2b
+INST[0x92] = convert("char") // i2c
+INST[0x93] = convert("int") // i2s
+INST[0x94] = function(c,p,s,cls,l) { // lcmp
+    var v2 = s.pop()[1];
+    var v1 = s.pop()[1];
+    if (v1 > v2) s.push(["int", 1])
+    else if (v1 == v2) s.push(["int", 0])
+    else s.push(["int", -1])
+    return p+1;
+}
+INST[0x95] = INST[0x94] // fcmpl FIXME: ignoring NaNs
+INST[0x96] = INST[0x94] // fcmpg 
+INST[0x97] = INST[0x94] // dcmpl
+INST[0x98] = INST[0x94] // dcmpg
 INST[0x99] = if_eq(function(v) {return  v[1] == 0 }) // ifeq
 INST[0x9a] = if_eq(function(v) {return  v[1] != 0 }) // ifne
 INST[0x9b] = if_eq(function(v) {return  v[1] < 0 }) // iflt
 INST[0x9c] = if_eq(function(v) {return  v[1] >= 0 }) // ifge
 INST[0x9d] = if_eq(function(v) {return  v[1] > 0 }) // ifgt
 INST[0x9e] = if_eq(function(v) {return  v[1] <= 0 }) // ifle
-
+INST[0x9f] = if_cmp(function(v1,v2){return  v1[1] == v2[1] } ) // if_icmpeq
 INST[0xa0] = if_cmp(function(v1,v2){return  !(v1[1] == v2[1]) } ) // if_icmpne
 INST[0xa1] = if_cmp(function(v1,v2){return  v1[1] < v2[1] } ) // if_icmplt
 INST[0xa2] = if_cmp(function(v1,v2){return  v1[1] >= v2[1] } ) // if_icmpge
@@ -709,108 +840,101 @@ INST[0xa7] = function(c, p, s, cls, l) { // goto
     print(" --- debug -- offset "+off)
     return off + p+1
 }
-
+INST[0xa8] = function(c,p,s,cls,l) { // jsr
+    print(" --- debug -- bytes "+c[p+1]+" and "+c[p+2]+"")
+    var off = signed((c[p+1] << 8) + c[p+2])
+    print(" --- debug -- offset "+off)
+    s.push(["int", p+1])
+    return off + p + 1
+}
+INST[0xa9] = function(c,p,s,cls,l) { // ret
+    var idx = c[p+1]
+    return l[idx]+1
+}
 INST[0xaa] =function(c,p,s,cls,l) { //tableswitch
-	var ctr=1;
-	while((p+ctr)%4)
-	{
-		++ctr;
+    var ctr=1;
+    while((p+ctr)%4) {
+	++ctr;
+    }
+    var bctr=0;
+    var bites=[];
+    for(bctr=0;bctr<12;++bctr) {
+	bites[bctr]=c[p+ctr+bctr];
+    }	
+    var def = ((bites[0] << 24) | (bites[1] << 16) | (bites[2] << 8) | bites[3]);
+    var low = ((bites[4] << 24) | (bites[5]<< 16) | (bites[6] << 8) | bites[7]);
+    var high = ((bites[8] << 24) | (bites[9] << 16) | (bites[10] << 8) | bites[11]);
+    ctr = ctr+bctr;
+    var jmptblesize = high-low+1;
+    var jmptbl = [];
+    var acc = 0;
+    for(bctr=0;bctr<jmptblesize*4;++bctr) {
+	if(bctr%4==0&&bctr>1) {
+	    jmptbl[(bctr/4)-1] = acc;
+	    acc=0;
+	} else {
+	    acc = (acc<<8|c[p+ctr+bctr]);
 	}
-	var bctr=0;
-	var bites=[];
-	for(bctr=0;bctr<12;++bctr)
-	{
-		bites[bctr]=c[p+ctr+bctr];
-	}	
-	var def = ((bites[0] << 24) | (bites[1] << 16) | (bites[2] << 8) | bites[3]);
-	var low = ((bites[4] << 24) | (bites[5]<< 16) | (bites[6] << 8) | bites[7]);
-	var high = ((bites[8] << 24) | (bites[9] << 16) | (bites[10] << 8) | bites[11]);
-	ctr = ctr+bctr;
-	var jmptblesize = high-low+1;
-	var jmptbl = [];
-	var acc = 0;
-	for(bctr=0;bctr<jmptblesize*4;++bctr)
-	{
-		if(bctr%4==0&&bctr>1)
-		{
-			jmptbl[(bctr/4)-1] = acc;
-			acc=0;
-		}
-		else
-		{
-			acc = (acc<<8|c[p+ctr+bctr]);
-		}
-	}
-	jmptbl[(bctr/4)-1] = acc;
-	var idx = s.pop();
-	var offset = 0;
-	if(idx[1]<low||idx[1]>high)
-	{
-		offset = def;
-	}
-	else
-	{
-		offset = jmptbl[idx[1]-low];
-	}
-	
-	print("--tbleswitch result"+(p+offset));
-	return p+offset;
+    }
+    jmptbl[(bctr/4)-1] = acc;
+    var idx = s.pop();
+    var offset = 0;
+    if(idx[1]<low||idx[1]>high) {
+	offset = def;
+    } else {
+	offset = jmptbl[idx[1]-low];
+    }
+    print("--tbleswitch result"+(p+offset));
+    return p+offset;
 }
 INST[0xab] =function(c,p,s,cls,l) { //lookupswitch
-	var ctr=1;
-	while((p+ctr)%4)
-	{
-		++ctr;
+    var ctr=1;
+    while((p+ctr)%4) {
+	++ctr;
+    }
+    var bctr=0;
+    var bites=[];
+    for(bctr=0;bctr<8;++bctr) {
+	bites[bctr]=c[p+ctr+bctr];
+    }	
+    var def = ((bites[0] << 24) | (bites[1] << 16) | (bites[2] << 8) | bites[3]);
+    var npairs = ((bites[4] << 24) | (bites[5]<< 16) | (bites[6] << 8) | bites[7]);
+    ctr = ctr+bctr;
+    var jmptblesize = npairs*2;//store key and val in i,i+1
+    var jmptbl = [];
+    var acc = 0;
+    for(bctr=0;bctr<jmptblesize*4;++bctr) {
+	if(bctr%4==0&&bctr>1) {
+	    jmptbl[(bctr/4)-1] = acc;
+	    acc=0;
+	} else {
+	    acc = (acc<<8|c[p+ctr+bctr]);
 	}
-	var bctr=0;
-	var bites=[];
-	for(bctr=0;bctr<8;++bctr)
-	{
-		bites[bctr]=c[p+ctr+bctr];
-	}	
-	var def = ((bites[0] << 24) | (bites[1] << 16) | (bites[2] << 8) | bites[3]);
-	var npairs = ((bites[4] << 24) | (bites[5]<< 16) | (bites[6] << 8) | bites[7]);
-	ctr = ctr+bctr;
-	var jmptblesize = npairs*2;//store key and val in i,i+1
-	var jmptbl = [];
-	var acc = 0;
-	for(bctr=0;bctr<jmptblesize*4;++bctr)
-	{
-		if(bctr%4==0&&bctr>1)
-		{
-			jmptbl[(bctr/4)-1] = acc;
-			acc=0;
-		}
-		else
-		{
-			acc = (acc<<8|c[p+ctr+bctr]);
-		}
+    }
+    jmptbl[(bctr/4)-1] = acc;
+    var idx = s.pop();
+    var offset = 0;
+    var found= false;
+    for(bctr=0;bctr<2*npairs;bctr+=2) {
+	if(jmptbl[bctr]==idx[1]) {
+	    offset = jmptbl[bctr+1];
+	    found = true;
 	}
-	jmptbl[(bctr/4)-1] = acc;
-	var idx = s.pop();
-	var offset = 0;
-	var found= false;
-	for(bctr=0;bctr<2*npairs;bctr+=2)
-	{
-		if(jmptbl[bctr]==idx[1])
-		{
-			offset = jmptbl[bctr+1];
-			found = true;
-		}
-	}
-	if(!found)
-	{
-		offset = def;
-	}
-	print("--lookupswitch result"+(p+offset));
-	return p+offset;
+    }
+    if(!found) {
+	offset = def;
+    }
+    print("--lookupswitch result"+(p+offset));
+    return p+offset;
 }
 INST[0xac] = function(c,p,s,cls,l) { // ireturn
     print(" --- debug -- returning int")
     return "ireturn"
 }
-
-
+INST[0xad] = INST[0xac] // lreturn
+INST[0xae] = INST[0xac] // freturn
+INST[0xaf] = INST[0xac] // dreturn
+INST[0xb0] = INST[0xac] // areturn
 INST[0xb1] = function(c,p,s,cls,l) { // return
     print(" --- debug -- returning")
     return "return"
@@ -821,8 +945,7 @@ INST[0xb2] = function(c,p,s,cls,l) { // getstatic
     var ncls = fref[1]
     var nt = fref[2]
     if (CLASSES[ncls]) { // our class
-	assert(1 == 2) // we need to have initialized this stuff
-		       // before and we're not doing it right now. FIXME
+	s.push(CLASSES[ncls].stat[nt])
     } else {
 	// a JVM class
 	eval("var field = "+ncls.replace("/",".")+"."+nt[1])
@@ -830,7 +953,20 @@ INST[0xb2] = function(c,p,s,cls,l) { // getstatic
     }
     return p+3
 }
-
+INST[0xb3] = function(c,p,s,cls,l) { // putstatic
+    var idx = (c[p+1] << 8) + c[p+2]
+    var fref = cls.constants[idx]
+    var ncls = fref[1]
+    var nt = fref[2]
+    var val = s.pop()
+    if (CLASSES[ncls]) { // our class
+	CLASSES[ncls].stat[nt] = val
+    } else {
+	// a JVM class
+	eval(ncls.replace("/",".")+"."+nt[1] + " = " + val[1])
+    }
+    return p+3
+}
 INST[0xb4] = function(c,p,s,cls,l) { // getfield
     var obj = s.pop()
     var fname = cls.constants[(c[p+1] << 8) + c[p+2]][2][1]
@@ -977,7 +1113,8 @@ INST[0xb8] = function(c,p,s,cls,l) { // invokestatic
 	assert(1==2)
     }
 }
-
+INST[0xb9] = INST[0xb6] // invokeinterface should be equal to invokevirtual
+INST[0xba] // unused
 INST[0xbb] = function(c,p,s,cls,l) { // new
     var idx = (c[p+1] << 8) + c[p+2]
     var clsname = cls.constants[idx][1]
@@ -1014,14 +1151,17 @@ INST[0xbd] = function(c,p,s,cls,l) { // anewarray
 	s.push(["array", {type: obj_name,length:arr_count[1], fields: {} }])
 	return p+3
 }
-
+INST[0xbe] = function(c,p,s,cls,l) { // arraylength
+    var arr = s.pop()
+    s.push(["int", arr.length])
+    return p+1
+}
 INST[0xbf] = function(c,p,s,cls,l) { // athrow
     var ex = s.pop()
     s.length = 0
     s.push(ex)
     return "throw"
 }
-
 INST[0xc0] = function(c,p,s,cls,l) {  //checkcast
 	var idx = (c[p+1]<<8)|c[p+2];
 	var m = cls.constants[idx];
@@ -1056,22 +1196,38 @@ INST[0xc1] = function(c,p,s,cls,l) {  //instanceof
 	}
 	return p+3;
 }
+INST[0xc2] // monitorenter
+INST[0xc3] // monitorexit
 
+INST[0xc4] // wide FIXME -- not implementing wide
+INST[0xc5] = function(c,p,s,cls,l) { // multianewarray
+    var idx = (c[p+1]<<8)+c[p+2]
+    var dim = c[p+3]
+    var counts = []
+    for (var i = 0; i < dim; ++i) {
+	counts.push(c[p+4+i])
+    }
+    var arr_count = s.pop();
+    var m = cls.constants[idx];
+    var obj_type = m[0];
+    var obj_name = m[1];
+    var c2 = clone(counts)
+    var arr = {type: obj_name,length:c2.pop(), fields: {} }
+    while (c2) {
+	var dim = counts.pop()
+	var new_arr = {type: obj_name, length: dim, fields: {}}
+	for (var i = 0; i < dim; ++i) {
+	    new_arr.fields[i] = clone(arr)
+	}
+	arr = new_arr
+    }
+    s.push(["array", ])
+    return p+3+dim
+}
 INST[0xc6] = if_eq(function(v) {return  v[1] == null}) // ifnull
 INST[0xc7] = if_eq(function(v) {return  v[1] != null }) // ifnonnull
 
-
-
-
-
-
-
-
-
-
-
-
-
+// the other instructions are boring or implementation-defined
 
 function matchType(extype, handler) {
     print(" --- debug -- matching "+extype+" with "+handler)
@@ -1142,7 +1298,6 @@ function runClass(cls) {
     }
     assert(1 == 2)
 }
-
 
 try {
    // var c = parseClass("Test2.class")
