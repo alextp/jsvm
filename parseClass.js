@@ -545,9 +545,9 @@ function ialoadcheck(c,p,s,cls,l,t) {//common function to do the array load inst
 
 function if_cmp(func) {
     return function(c,p,s,cls,l) {
-	var v1 = s.pop();
 	var v2 = s.pop();
-	if (!func(v1,v2)) {
+	var v1 = s.pop();
+	if (func(v1,v2)) {
 	    var off = signed((c[p+1] << 8) + c[p+2])
 	    print(" --- debug -- offset is " + off)
 	    return p + off
@@ -780,7 +780,7 @@ INST[0x60]=INST[0x61]=INST[0x62]=INST[0x63]=iop(function(a,b){return a+b})//{ilf
 INST[0x64]=INST[0x65]=INST[0x66]=INST[0x67]=iop(function(a,b){return a-b})//{ilfd}sub
 INST[0x68]=INST[0x69]=INST[0x6a]=INST[0x6b]=iop(function(a,b){return a*b})//{ilfd}mul
 INST[0x6c]=INST[0x6d]=INST[0x6e]=INST[0x6f]=iop(function(a,b){return a/b})//{ilfd}div
-INST[0x70]=INST[0x71]=INST[0x72]=INST[0x73]=iop(function(a,b){return b%a})//{ilfd}rem
+INST[0x70]=INST[0x71]=INST[0x72]=INST[0x73]=iop(function(a,b){return a%b})//{ilfd}rem
 INST[0x74]=INST[0x75]=INST[0x76]=INST[0x77]=uiop(function(a){return -a}) // {ilfd}neg
 INST[0x78]=INST[0x79]=iop(function(a,b){return b << a})//{il}shl
 INST[0x7a]=INST[0x7b]=iop(function(a,b){return b >> a})//{il}shr

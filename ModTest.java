@@ -13,10 +13,12 @@ public class ModTest {
 		{
 			sum1+=i;
 		}
+		System.out.println("sum1 is " + sum1);
 		for(i=0;i<13;++i)
 		{
 			sum2+=i;
 		}
+		System.out.println("sum2 is " + sum2);
 		int mod = sum2%sum1;
 		System.out.println(mod);
 	}
