@@ -163,10 +163,12 @@ function readFields(f, fcount, constants) {
 	var acount = f.readShort()
 	var isconst = false;
 	var cval = null;
+	print(" --- debug -- field with "+acount+" attributes")
 	for (var j = 0; j < acount; ++j) {
-	    var name = constants[f.readShort()][1]
-	    if (name == "ConstantValue") {
-		f.readLong()
+	    print(" --- debug -- reading field attrs")
+	    var aname = constants[f.readShort()][1]
+	    if (aname == "ConstantValue") {
+		f.readInt()
 		isconst = true;
 		cval = constants[f.readShort()]
 	    } else {
@@ -204,7 +206,9 @@ function readMethods(f, mcount, constants, cls) {
     print(" --- debug -- reading methods")
     for (var i = 0; i < mcount; ++i) {
 	var flags = f.readShort()
-	var mname = constants[f.readShort()][1]
+	var mni = f.readShort()
+	print(" --- debug -- reading index "+mni.toString(16)+" out of "+constants.length+" flags "+flags.toString(2))
+	var mname = constants[mni][1]
 	var type = constants[f.readShort()][1]
 	var acount = f.readShort()
 	var code = []
@@ -697,12 +701,14 @@ INST[0x2e] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_INT)}//i
 INST[0x2f] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_LONG)}//laload
 INST[0x30] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_FLOAT)}//faload
 INST[0x31] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_DOUBLE)}//daload
+INST[0x32] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_OBJ)}//aaload
 INST[0x33] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_BOOLEAN)}//baload
 INST[0x34] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_CHAR)}//caload
 INST[0x35] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_SHORT)}//saload
 INST[0x36] = function(c,p,s,cls,l) { // istore
     var idx = c[p+1]
     l[idx] = s.pop()
+    return p+2
 }
 INST[0x37] = INST[0x36] // lstore
 INST[0x38] = INST[0x36] // fstore
@@ -838,7 +844,7 @@ INST[0xa7] = function(c, p, s, cls, l) { // goto
     print(" --- debug -- bytes "+c[p+1]+" and "+c[p+2]+"")
     var off = signed((c[p+1] << 8) + c[p+2])
     print(" --- debug -- offset "+off)
-    return off + p//+1
+    return off + p+1
 }
 INST[0xa8] = function(c,p,s,cls,l) { // jsr
     print(" --- debug -- bytes "+c[p+1]+" and "+c[p+2]+"")
@@ -1293,19 +1299,20 @@ function runClass(cls) {
     print(" --- debug -- running class "+cls.name)
     for (var i = 0; i < cls.methods.length; ++i) {
 	var m = cls.methods[i]
+	var locals = {0: ["array", {length: 0}]}
 	if ((m.name == "main") && (m.type == "([Ljava/lang/String;)V"))
-	    return runMethod(m, cls, {variables:{}})
+	    return runMethod(m, cls, locals)
     }
     assert(1 == 2)
 }
 
 try {
    // var c = parseClass("Test2.class")
-    var names = ["AnException", "AnotherException", "Catcher1"]
+    var names = ["ModTest"]
     for (var c =0; c < names.length; ++c ) {
 	parseClass(names[c]+".class")
     }
-    runClass(CLASSES["Catcher1"])
+    runClass(CLASSES["ModTest"])
 } catch(e) {
     if(e.rhinoException != null)
     {
