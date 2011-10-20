@@ -13,7 +13,7 @@ var CONSTANT_Utf8 = 1
 
 
 function print(x) {
-    java.lang.System.out.println(x)
+    //java.lang.System.out.println(x)
 }
 
 var CLASSES = {}
@@ -163,10 +163,12 @@ function readFields(f, fcount, constants) {
 	var acount = f.readShort()
 	var isconst = false;
 	var cval = null;
+	print(" --- debug -- field with "+acount+" attributes")
 	for (var j = 0; j < acount; ++j) {
-	    var name = constants[f.readShort()][1]
-	    if (name == "ConstantValue") {
-		f.readLong()
+	    print(" --- debug -- reading field attrs")
+	    var aname = constants[f.readShort()][1]
+	    if (aname == "ConstantValue") {
+		f.readInt()
 		isconst = true;
 		cval = constants[f.readShort()]
 	    } else {
@@ -204,7 +206,9 @@ function readMethods(f, mcount, constants, cls) {
     print(" --- debug -- reading methods")
     for (var i = 0; i < mcount; ++i) {
 	var flags = f.readShort()
-	var mname = constants[f.readShort()][1]
+	var mni = f.readShort()
+	print(" --- debug -- reading index "+mni.toString(16)+" out of "+constants.length+" flags "+flags.toString(2))
+	var mname = constants[mni][1]
 	var type = constants[f.readShort()][1]
 	var acount = f.readShort()
 	var code = []
@@ -324,6 +328,7 @@ function parseClass(fname) {
     var cls = {
 	name: ths,
 	vtable: null,
+	initialized: false,
 	flags: aflags,
 	superName: supr,
 	stat: {},
@@ -345,7 +350,7 @@ function getVTable(cls) {
     var vt = {}
     if (cls.superName) {
 	print(" --- debug -- getting "+cls.superName+"'s vtable")
-	vt = clone(getVTable(CLASSES[cls.superName]))
+	vt = clone(getVTable(getCls(cls.superName)))
     }
     print(" --- debug getting "+cls.name+"'s vtable")
     for (var i = 0; i < cls.methods.length; ++i) {
@@ -363,6 +368,7 @@ CLASSES["java/lang/Object"] = {
     flags:0,
     superName: null,
     vtable: null,
+    initialized: true,
     interfaces: [],
     fields: [],
     stat: {},
@@ -381,7 +387,7 @@ CLASSES["java/lang/Object"] = {
 	makeJsMethod("clone", "()V", function(m, cls, locals) {
 	    return clone(locals[0])
 	}, "java/lang/Object"),
-	makeJsMethod("getClass", "()Ljava/lang/Class;", function(m, cls, l) {cls}),
+	makeJsMethod("getCls", "()Ljava/lang/Class;", function(m, cls, l) {cls}),
 	makeJsMethod("toString", "()Ljava/lang/String;", function(m,cls,l){
 	    return cls.name+"@"+locals[0].__hash_code.toStirng(16)
 	}, "java/lang/Object")
@@ -396,6 +402,7 @@ CLASSES["java/lang/Serializable"] = {
     flags:0,
     superName:null,
     vtable: null,
+    initialized: true,
     interfaces: [],
     fields: [],
     methods: [],
@@ -408,6 +415,7 @@ CLASSES["java/lang/Throwable"] = {
     superName:"java/lang/Object",
     interfaces:["java/lang/Serializable"],
     fields: [],
+    initialized: true,
     stat: {},
     methods: [
 	//  Throwable	fillInStackTrace() 
@@ -434,6 +442,7 @@ CLASSES["java/lang/Exception"] = {
     flags: 0,
     superName: "java/lang/Throwable",
     interfaces: [],
+    initialized: true,
     stat: {},
     methods: [
 	makeJsMethod("<init>", "()V", function(m, cls, locals) {
@@ -536,9 +545,9 @@ function ialoadcheck(c,p,s,cls,l,t) {//common function to do the array load inst
 
 function if_cmp(func) {
     return function(c,p,s,cls,l) {
-	var v1 = s.pop();
 	var v2 = s.pop();
-	if (!func(v1,v2)) {
+	var v1 = s.pop();
+	if (func(v1,v2)) {
 	    var off = signed((c[p+1] << 8) + c[p+2])
 	    print(" --- debug -- offset is " + off)
 	    return p + off
@@ -561,8 +570,8 @@ function if_eq(func) {
 
 function iop(func) {
     return function(c, p, s, cls, l) {
-	var v1 = s.pop()
 	var v2 = s.pop()
+	var v1 = s.pop()
 	s.push([v1[0], func(v1[1], v2[1])])
 	print(" --- debug -- running op "+func+" with "+v1[1]+" and "+v2[1]+" res "+func(v1[1],v2[1]))
 	return p+1
@@ -579,32 +588,22 @@ function uiop(func) {
 }
 
 
-function is_subclass(s,t)
-{
-	if(s==t)
-	{
+function is_subclass(s,t) {
+    print(" --- debug -- testing if " +s+ " is subclass of "+t)
+    if(s==t) {
+	return true;
+    } else {
+	var cls = getCls(s)
+	print(" --- debug -- checking interfaces")
+	for (var i = 0; i < cls.interfaces.length; ++i)
+	    if (is_subclass(cls.interfaces[i],t)) return true;
+	if (cls.superName) {
+	    print(" --- checking superclass "+s.superName)
+	    if (is_subclass(cls.superName,t))
 		return true;
 	}
-	else
-	{
-		//check if T is a superclass of S
-		var curclass = s;
-		var found = false;
-		while(curclass!=null)
-		{
-			var parclass = CLASSES[curclass].superName;	
-			if(parclass==t)
-			{
-				found = true;
-				break;
-			}
-			else
-			{
-				curclass = parclass;
-			}
-		}
-		return found;
-	}
+	return false;
+    }
 }
 
 function formatArgs(l) {
@@ -697,13 +696,14 @@ INST[0x2e] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_INT)}//i
 INST[0x2f] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_LONG)}//laload
 INST[0x30] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_FLOAT)}//faload
 INST[0x31] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_DOUBLE)}//daload
+INST[0x32] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_OBJ)}//aaload
 INST[0x33] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_BOOLEAN)}//baload
 INST[0x34] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_CHAR)}//caload
 INST[0x35] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_SHORT)}//saload
 INST[0x36] = function(c,p,s,cls,l) { // istore
     var idx = c[p+1]
     l[idx] = s.pop()
-	return p+2;
+    return p+2
 }
 INST[0x37] = INST[0x36] // lstore
 INST[0x38] = INST[0x36] // fstore
@@ -780,7 +780,7 @@ INST[0x60]=INST[0x61]=INST[0x62]=INST[0x63]=iop(function(a,b){return a+b})//{ilf
 INST[0x64]=INST[0x65]=INST[0x66]=INST[0x67]=iop(function(a,b){return a-b})//{ilfd}sub
 INST[0x68]=INST[0x69]=INST[0x6a]=INST[0x6b]=iop(function(a,b){return a*b})//{ilfd}mul
 INST[0x6c]=INST[0x6d]=INST[0x6e]=INST[0x6f]=iop(function(a,b){return a/b})//{ilfd}div
-INST[0x70]=INST[0x71]=INST[0x72]=INST[0x73]=iop(function(a,b){return b%a})//{ilfd}rem
+INST[0x70]=INST[0x71]=INST[0x72]=INST[0x73]=iop(function(a,b){return a%b})//{ilfd}rem
 INST[0x74]=INST[0x75]=INST[0x76]=INST[0x77]=uiop(function(a){return -a}) // {ilfd}neg
 INST[0x78]=INST[0x79]=iop(function(a,b){return b << a})//{il}shl
 INST[0x7a]=INST[0x7b]=iop(function(a,b){return b >> a})//{il}shr
@@ -837,9 +837,10 @@ INST[0xa5] = if_cmp(function(v1,v2){return  v1[1] === v2[1] }) // if_acmpeq
 INST[0xa6] = if_cmp(function(v1,v2){return  !(v1[1] === v2[1]) }) // if_acmpne
 INST[0xa7] = function(c, p, s, cls, l) { // goto
     print(" --- debug -- bytes "+c[p+1]+" and "+c[p+2]+"")
-    var off = signed((c[p+1] << 8) + c[p+2])
+    var off = signed((c[p+1] << 8) | c[p+2])
+    if (off < 0) off = off + 1
     print(" --- debug -- offset "+off)
-    return off + p//+1
+    return off + p
 }
 INST[0xa8] = function(c,p,s,cls,l) { // jsr
     print(" --- debug -- bytes "+c[p+1]+" and "+c[p+2]+"")
@@ -945,8 +946,8 @@ INST[0xb2] = function(c,p,s,cls,l) { // getstatic
     var fref = cls.constants[idx]
     var ncls = fref[1]
     var nt = fref[2]
-    if (CLASSES[ncls]) { // our class
-	s.push(CLASSES[ncls].stat[nt])
+    if (getCls(ncls)) { // our class
+	s.push(getCls(ncls).stat[nt])
     } else {
 	// a JVM class
 	eval("var field = "+ncls.replace("/",".")+"."+nt[1])
@@ -960,8 +961,8 @@ INST[0xb3] = function(c,p,s,cls,l) { // putstatic
     var ncls = fref[1]
     var nt = fref[2]
     var val = s.pop()
-    if (CLASSES[ncls]) { // our class
-	CLASSES[ncls].stat[nt] = val
+    if (getCls(ncls)) { // our class
+	getCls(ncls).stat[nt] = val
     } else {
 	// a JVM class
 	eval(ncls.replace("/",".")+"."+nt[1] + " = " + val[1])
@@ -1009,9 +1010,9 @@ INST[0xb6] = function(c,p,s,cls,l) { // invokevirtual
 	var method = obj.vtable[mname + "||"+mtype]
 	var ret = null
 	if (method.jscode)
-	    ret = method.jscode(method, CLASSES[method.cls], newl)
+	    ret = method.jscode(method, getCls(method.cls), newl)
 	else
-	    ret = runMethod(method, CLASSES[method.cls], newl)
+	    ret = runMethod(method, getCls(method.cls), newl)
 	if (ret == "throw") {
 	    s.push(newl[0])
 	    return ret
@@ -1052,12 +1053,12 @@ INST[0xb7] = function(c,p,s,cls,l) { // invokespecial
     if (o[0] == "obj") {
 	var obj = o[1]
 	var clsname = obj.cls
-	var method = getVTable(CLASSES[mcls])[mname + "||"+mtype]
+	var method = getVTable(getCls(mcls))[mname + "||"+mtype]
 	var ret = null
 	if (method.jsfunc)
-	    ret = method.jsfunc(method, CLASSES[method.cls], newl)
+	    ret = method.jsfunc(method, getCls(method.cls), newl)
 	else
-	    ret = runMethod(method, CLASSES[method.cls], newl)
+	    ret = runMethod(method, getCls(method.cls), newl)
 	if (ret == "throw") {
 	    s.push(newl[0])
 	    return ret
@@ -1096,13 +1097,13 @@ INST[0xb8] = function(c,p,s,cls,l) { // invokestatic
 	newl.push(s.pop())
     }
     newl.reverse()
-    if (CLASSES[mcls]) { // we're in our land
-	var method = getVTable(CLASSES[mcls])[mname + "||"+mtype]
+    if (getCls(mcls)) { // we're in our land
+	var method = getVTable(getCls(mcls))[mname + "||"+mtype]
 	var ret = null
 	if (method.jsfunc)
-	    ret = method.jsfunc(method, CLASSES[method.cls], newl)
+	    ret = method.jsfunc(method, getCls(method.cls), newl)
 	else
-	    ret = runMethod(method, CLASSES[method.cls], newl)
+	    ret = runMethod(method, getCls(method.cls), newl)
 	if (ret == "throw") {
 	    s.push(newl[0])
 	    return "throw"
@@ -1114,16 +1115,18 @@ INST[0xb8] = function(c,p,s,cls,l) { // invokestatic
 	assert(1==2)
     }
 }
-INST[0xb9] = INST[0xb6] // invokeinterface should be equal to invokevirtual
+INST[0xb9] = function(c,p,s,cls,l) {
+    return INST[0xb6](c,p,s,cls,l)+2 // invokeinterface should be equal to invokevirtual
+}
 INST[0xba] // unused
 INST[0xbb] = function(c,p,s,cls,l) { // new
     var idx = (c[p+1] << 8) + c[p+2]
     var clsname = cls.constants[idx][1]
-    if (CLASSES[clsname]) {
+    if (getCls(clsname)) {
 	// this means we know which class it is
  	print(" ---- debug ---- creating object "+clsname)
 	var obj = {type: clsname}
-	var newcls = CLASSES[clsname]
+	var newcls = getCls(clsname)
 	s.push(["obj", {cls: clsname, fields: {}, vtable: getVTable(newcls)}])
     } else {
 	// since we haven't loaded this class we fall back to the JVM
@@ -1164,20 +1167,21 @@ INST[0xbf] = function(c,p,s,cls,l) { // athrow
     return "throw"
 }
 INST[0xc0] = function(c,p,s,cls,l) {  //checkcast
-	var idx = (c[p+1]<<8)|c[p+2];
-	var m = cls.constants[idx];
-	var tgttype = m[0];
-	var tgtname = m[1];
-	var src = s.pop();
-	var srcname = src[1].cls;
-	print("--debug casting to--"+m);
-	var convertible = is_subclass(srcname,tgtname);
-	if(!convertible)
-	{
-		print("error! ClassCastException");
-		throw "ClassCastException"	
-	}
-	return p+3;
+    var idx = (c[p+1]<<8)|c[p+2];
+    var m = cls.constants[idx];
+    var tgttype = m[0];
+    var tgtname = m[1];
+    var src = s.pop();
+    var srcname = src[1].cls;
+    print("--debug casting to--"+m);
+    var convertible = is_subclass(srcname,tgtname);
+    if(!convertible)
+    {
+	print("error! ClassCastException");
+	throw "ClassCastException"	
+    }
+    s.push(src)
+    return p+3;
 }
 INST[0xc1] = function(c,p,s,cls,l) {  //instanceof
 	var idx = (c[p+1]<<8)|c[p+2];
@@ -1234,9 +1238,9 @@ function matchType(extype, handler) {
     print(" --- debug -- matching "+extype+" with "+handler)
     if (handler == "any") return true
     if (extype == handler) return true
-    for (var i = 0; i < CLASSES[extype].interfaces.length; ++i)
-	if (CLASSES[extype].interfaces[i] == handler) return true
-    if (CLASSES[extype].superName) return matchType(CLASSES[extype].superName,handler)
+    for (var i = 0; i < getCls(extype).interfaces.length; ++i)
+	if (getCls(extype).interfaces[i] == handler) return true
+    if (getCls(extype).superName) return matchType(getCls(extype).superName,handler)
     return false
 }
 
@@ -1287,34 +1291,68 @@ function runMethod(method, cls, locals) {
     }
 }
 
+function initializeStatic(cls) {
+    print(" --- debug -- initializing class "+cls.name)
+    for (var i = 0; i < cls.methods.length; ++i) {
+	var m = cls.methods[i]
+	var locals = {}
+	if ((m.name == "<clinit>") && (m.type == "()V")) {
+	    runMethod(m, cls, locals)
+	    return
+	}
+    }
+}
+
+function getCls(c) {
+    var cls = CLASSES[c]
+    if (!cls) return cls;
+    if (!cls.initialized) {
+	cls.initialized = true;
+	initializeStatic(cls);
+    }
+    return cls;
+}
+
 function runClass(cls) {
     // to run a class we need to find the public method Main with type
     //   ([Ljava/lang/String;)V
     // and run it
-    print(" --- debug -- running class "+cls.name)
     for (var i = 0; i < cls.methods.length; ++i) {
 	var m = cls.methods[i]
-	if ((m.name == "main") && (m.type == "([Ljava/lang/String;)V"))
-	    return runMethod(m, cls, {variables:{}})
+	var locals = {0: ["array", {length: 0}]}
+	if ((m.name == "main") && (m.type == "([Ljava/lang/String;)V")) {
+	    java.lang.System.out.println(" --- running class "+cls.name)
+	    return runMethod(m, cls, locals)
+	}
     }
-    assert(1 == 2)
+    // assert(1 == 2)
 }
 
 try {
-   // var c = parseClass("Test2.class")
-    var names = ["Vehicle","FlyingVehicle","Car","Plane","Garage"]
-    for (var c =0; c < names.length; ++c ) {
-	parseClass(names[c]+".class")
+    var folder = new java.io.File(".")
+    var lf = folder.listFiles()
+    for (var i = 0; i < lf.length; ++i) {
+	if (lf[i].isFile()) {
+	    var name = lf[i].getName()
+	    if (name.match(/.class/))
+		parseClass(name)
+	    
+	}
     }
-	print("running"+names[0]); 
-    runClass(CLASSES["Garage"])
+    print(" --- debug -- read all classes")
+    for (var name in CLASSES) {
+	java.lang.System.out.println(" --- trying to class "+name)
+	runClass(getCls(name))
+    }
 } catch(e) {
     if(e.rhinoException != null)
     {
+	print("Rhino ex:")
         e.rhinoException.printStackTrace();
     }
     else if(e.javaException != null)
     {
+	print("JVM ex:")
         e. javaException.printStackTrace();
     }
 
