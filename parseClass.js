@@ -703,6 +703,7 @@ INST[0x35] = function(c,p,s,cls,l){return ialoadcheck(c,p,s,cls,l,ATYPE_SHORT)}/
 INST[0x36] = function(c,p,s,cls,l) { // istore
     var idx = c[p+1]
     l[idx] = s.pop()
+	return p+2;
 }
 INST[0x37] = INST[0x36] // lstore
 INST[0x38] = INST[0x36] // fstore
@@ -1301,11 +1302,12 @@ function runClass(cls) {
 
 try {
    // var c = parseClass("Test2.class")
-    var names = ["AnException", "AnotherException", "Catcher1"]
+    var names = ["Vehicle","FlyingVehicle","Car","Plane","Garage"]
     for (var c =0; c < names.length; ++c ) {
 	parseClass(names[c]+".class")
     }
-    runClass(CLASSES["Catcher1"])
+	print("running"+names[0]); 
+    runClass(CLASSES["Garage"])
 } catch(e) {
     if(e.rhinoException != null)
     {
