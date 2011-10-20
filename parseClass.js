@@ -13,7 +13,7 @@ var CONSTANT_Utf8 = 1
 
 
 function print(x) {
-    java.lang.System.out.println(x)
+    //java.lang.System.out.println(x)
 }
 
 var CLASSES = {}
@@ -588,32 +588,22 @@ function uiop(func) {
 }
 
 
-function is_subclass(s,t)
-{
-	if(s==t)
-	{
+function is_subclass(s,t) {
+    print(" --- debug -- testing if " +s+ " is subclass of "+t)
+    if(s==t) {
+	return true;
+    } else {
+	var cls = getCls(s)
+	print(" --- debug -- checking interfaces")
+	for (var i = 0; i < cls.interfaces.length; ++i)
+	    if (is_subclass(cls.interfaces[i],t)) return true;
+	if (cls.superName) {
+	    print(" --- checking superclass "+s.superName)
+	    if (is_subclass(cls.superName,t))
 		return true;
 	}
-	else
-	{
-		//check if T is a superclass of S
-		var curclass = s;
-		var found = false;
-		while(curclass!=null)
-		{
-		    var parclass = getCls(curclass).superName;	
-			if(parclass==t)
-			{
-				found = true;
-				break;
-			}
-			else
-			{
-				curclass = parclass;
-			}
-		}
-		return found;
-	}
+	return false;
+    }
 }
 
 function formatArgs(l) {
@@ -1125,7 +1115,9 @@ INST[0xb8] = function(c,p,s,cls,l) { // invokestatic
 	assert(1==2)
     }
 }
-INST[0xb9] = INST[0xb6] // invokeinterface should be equal to invokevirtual
+INST[0xb9] = function(c,p,s,cls,l) {
+    return INST[0xb6](c,p,s,cls,l)+2 // invokeinterface should be equal to invokevirtual
+}
 INST[0xba] // unused
 INST[0xbb] = function(c,p,s,cls,l) { // new
     var idx = (c[p+1] << 8) + c[p+2]
@@ -1175,20 +1167,21 @@ INST[0xbf] = function(c,p,s,cls,l) { // athrow
     return "throw"
 }
 INST[0xc0] = function(c,p,s,cls,l) {  //checkcast
-	var idx = (c[p+1]<<8)|c[p+2];
-	var m = cls.constants[idx];
-	var tgttype = m[0];
-	var tgtname = m[1];
-	var src = s.pop();
-	var srcname = src[1].cls;
-	print("--debug casting to--"+m);
-	var convertible = is_subclass(srcname,tgtname);
-	if(!convertible)
-	{
-		print("error! ClassCastException");
-		throw "ClassCastException"	
-	}
-	return p+3;
+    var idx = (c[p+1]<<8)|c[p+2];
+    var m = cls.constants[idx];
+    var tgttype = m[0];
+    var tgtname = m[1];
+    var src = s.pop();
+    var srcname = src[1].cls;
+    print("--debug casting to--"+m);
+    var convertible = is_subclass(srcname,tgtname);
+    if(!convertible)
+    {
+	print("error! ClassCastException");
+	throw "ClassCastException"	
+    }
+    s.push(src)
+    return p+3;
 }
 INST[0xc1] = function(c,p,s,cls,l) {  //instanceof
 	var idx = (c[p+1]<<8)|c[p+2];
@@ -1328,7 +1321,7 @@ function runClass(cls) {
 	var m = cls.methods[i]
 	var locals = {0: ["array", {length: 0}]}
 	if ((m.name == "main") && (m.type == "([Ljava/lang/String;)V")) {
-	    print(" --- running class "+cls.name)
+	    java.lang.System.out.println(" --- running class "+cls.name)
 	    return runMethod(m, cls, locals)
 	}
     }
@@ -1348,6 +1341,7 @@ try {
     }
     print(" --- debug -- read all classes")
     for (var name in CLASSES) {
+	java.lang.System.out.println(" --- trying to class "+name)
 	runClass(getCls(name))
     }
 } catch(e) {
