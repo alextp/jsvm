@@ -570,8 +570,8 @@ function if_eq(func) {
 
 function iop(func) {
     return function(c, p, s, cls, l) {
-	var v1 = s.pop()
 	var v2 = s.pop()
+	var v1 = s.pop()
 	s.push([v1[0], func(v1[1], v2[1])])
 	print(" --- debug -- running op "+func+" with "+v1[1]+" and "+v2[1]+" res "+func(v1[1],v2[1]))
 	return p+1
