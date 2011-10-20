@@ -328,6 +328,7 @@ function parseClass(fname) {
     var cls = {
 	name: ths,
 	vtable: null,
+	initialized: false,
 	flags: aflags,
 	superName: supr,
 	stat: {},
@@ -349,7 +350,7 @@ function getVTable(cls) {
     var vt = {}
     if (cls.superName) {
 	print(" --- debug -- getting "+cls.superName+"'s vtable")
-	vt = clone(getVTable(CLASSES[cls.superName]))
+	vt = clone(getVTable(getCls(cls.superName)))
     }
     print(" --- debug getting "+cls.name+"'s vtable")
     for (var i = 0; i < cls.methods.length; ++i) {
@@ -367,6 +368,7 @@ CLASSES["java/lang/Object"] = {
     flags:0,
     superName: null,
     vtable: null,
+    initialized: true,
     interfaces: [],
     fields: [],
     stat: {},
@@ -385,7 +387,7 @@ CLASSES["java/lang/Object"] = {
 	makeJsMethod("clone", "()V", function(m, cls, locals) {
 	    return clone(locals[0])
 	}, "java/lang/Object"),
-	makeJsMethod("getClass", "()Ljava/lang/Class;", function(m, cls, l) {cls}),
+	makeJsMethod("getCls", "()Ljava/lang/Class;", function(m, cls, l) {cls}),
 	makeJsMethod("toString", "()Ljava/lang/String;", function(m,cls,l){
 	    return cls.name+"@"+locals[0].__hash_code.toStirng(16)
 	}, "java/lang/Object")
@@ -400,6 +402,7 @@ CLASSES["java/lang/Serializable"] = {
     flags:0,
     superName:null,
     vtable: null,
+    initialized: true,
     interfaces: [],
     fields: [],
     methods: [],
@@ -412,6 +415,7 @@ CLASSES["java/lang/Throwable"] = {
     superName:"java/lang/Object",
     interfaces:["java/lang/Serializable"],
     fields: [],
+    initialized: true,
     stat: {},
     methods: [
 	//  Throwable	fillInStackTrace() 
@@ -438,6 +442,7 @@ CLASSES["java/lang/Exception"] = {
     flags: 0,
     superName: "java/lang/Throwable",
     interfaces: [],
+    initialized: true,
     stat: {},
     methods: [
 	makeJsMethod("<init>", "()V", function(m, cls, locals) {
@@ -596,7 +601,7 @@ function is_subclass(s,t)
 		var found = false;
 		while(curclass!=null)
 		{
-			var parclass = CLASSES[curclass].superName;	
+		    var parclass = getCls(curclass).superName;	
 			if(parclass==t)
 			{
 				found = true;
@@ -950,8 +955,8 @@ INST[0xb2] = function(c,p,s,cls,l) { // getstatic
     var fref = cls.constants[idx]
     var ncls = fref[1]
     var nt = fref[2]
-    if (CLASSES[ncls]) { // our class
-	s.push(CLASSES[ncls].stat[nt])
+    if (getCls(ncls)) { // our class
+	s.push(getCls(ncls).stat[nt])
     } else {
 	// a JVM class
 	eval("var field = "+ncls.replace("/",".")+"."+nt[1])
@@ -965,8 +970,8 @@ INST[0xb3] = function(c,p,s,cls,l) { // putstatic
     var ncls = fref[1]
     var nt = fref[2]
     var val = s.pop()
-    if (CLASSES[ncls]) { // our class
-	CLASSES[ncls].stat[nt] = val
+    if (getCls(ncls)) { // our class
+	getCls(ncls).stat[nt] = val
     } else {
 	// a JVM class
 	eval(ncls.replace("/",".")+"."+nt[1] + " = " + val[1])
@@ -1014,9 +1019,9 @@ INST[0xb6] = function(c,p,s,cls,l) { // invokevirtual
 	var method = obj.vtable[mname + "||"+mtype]
 	var ret = null
 	if (method.jscode)
-	    ret = method.jscode(method, CLASSES[method.cls], newl)
+	    ret = method.jscode(method, getCls(method.cls), newl)
 	else
-	    ret = runMethod(method, CLASSES[method.cls], newl)
+	    ret = runMethod(method, getCls(method.cls), newl)
 	if (ret == "throw") {
 	    s.push(newl[0])
 	    return ret
@@ -1057,12 +1062,12 @@ INST[0xb7] = function(c,p,s,cls,l) { // invokespecial
     if (o[0] == "obj") {
 	var obj = o[1]
 	var clsname = obj.cls
-	var method = getVTable(CLASSES[mcls])[mname + "||"+mtype]
+	var method = getVTable(getCls(mcls))[mname + "||"+mtype]
 	var ret = null
 	if (method.jsfunc)
-	    ret = method.jsfunc(method, CLASSES[method.cls], newl)
+	    ret = method.jsfunc(method, getCls(method.cls), newl)
 	else
-	    ret = runMethod(method, CLASSES[method.cls], newl)
+	    ret = runMethod(method, getCls(method.cls), newl)
 	if (ret == "throw") {
 	    s.push(newl[0])
 	    return ret
@@ -1101,13 +1106,13 @@ INST[0xb8] = function(c,p,s,cls,l) { // invokestatic
 	newl.push(s.pop())
     }
     newl.reverse()
-    if (CLASSES[mcls]) { // we're in our land
-	var method = getVTable(CLASSES[mcls])[mname + "||"+mtype]
+    if (getCls(mcls)) { // we're in our land
+	var method = getVTable(getCls(mcls))[mname + "||"+mtype]
 	var ret = null
 	if (method.jsfunc)
-	    ret = method.jsfunc(method, CLASSES[method.cls], newl)
+	    ret = method.jsfunc(method, getCls(method.cls), newl)
 	else
-	    ret = runMethod(method, CLASSES[method.cls], newl)
+	    ret = runMethod(method, getCls(method.cls), newl)
 	if (ret == "throw") {
 	    s.push(newl[0])
 	    return "throw"
@@ -1124,11 +1129,11 @@ INST[0xba] // unused
 INST[0xbb] = function(c,p,s,cls,l) { // new
     var idx = (c[p+1] << 8) + c[p+2]
     var clsname = cls.constants[idx][1]
-    if (CLASSES[clsname]) {
+    if (getCls(clsname)) {
 	// this means we know which class it is
  	print(" ---- debug ---- creating object "+clsname)
 	var obj = {type: clsname}
-	var newcls = CLASSES[clsname]
+	var newcls = getCls(clsname)
 	s.push(["obj", {cls: clsname, fields: {}, vtable: getVTable(newcls)}])
     } else {
 	// since we haven't loaded this class we fall back to the JVM
@@ -1239,9 +1244,9 @@ function matchType(extype, handler) {
     print(" --- debug -- matching "+extype+" with "+handler)
     if (handler == "any") return true
     if (extype == handler) return true
-    for (var i = 0; i < CLASSES[extype].interfaces.length; ++i)
-	if (CLASSES[extype].interfaces[i] == handler) return true
-    if (CLASSES[extype].superName) return matchType(CLASSES[extype].superName,handler)
+    for (var i = 0; i < getCls(extype).interfaces.length; ++i)
+	if (getCls(extype).interfaces[i] == handler) return true
+    if (getCls(extype).superName) return matchType(getCls(extype).superName,handler)
     return false
 }
 
@@ -1292,6 +1297,28 @@ function runMethod(method, cls, locals) {
     }
 }
 
+function initializeStatic(cls) {
+    print(" --- debug -- initializing class "+cls.name)
+    for (var i = 0; i < cls.methods.length; ++i) {
+	var m = cls.methods[i]
+	var locals = {}
+	if ((m.name == "<clinit>") && (m.type == "()V")) {
+	    runMethod(m, cls, locals)
+	    return
+	}
+    }
+}
+
+function getCls(c) {
+    var cls = CLASSES[c]
+    if (!cls) return cls;
+    if (!cls.initialized) {
+	cls.initialized = true;
+	initializeStatic(cls);
+    }
+    return cls;
+}
+
 function runClass(cls) {
     // to run a class we need to find the public method Main with type
     //   ([Ljava/lang/String;)V
@@ -1308,11 +1335,11 @@ function runClass(cls) {
 
 try {
    // var c = parseClass("Test2.class")
-    var names = ["ModTest"]
+    var names = ["ModTest", "TestStatic"]
     for (var c =0; c < names.length; ++c ) {
 	parseClass(names[c]+".class")
     }
-    runClass(CLASSES["ModTest"])
+    runClass(getCls("TestStatic"))
 } catch(e) {
     if(e.rhinoException != null)
     {
