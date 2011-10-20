@@ -847,9 +847,10 @@ INST[0xa5] = if_cmp(function(v1,v2){return  v1[1] === v2[1] }) // if_acmpeq
 INST[0xa6] = if_cmp(function(v1,v2){return  !(v1[1] === v2[1]) }) // if_acmpne
 INST[0xa7] = function(c, p, s, cls, l) { // goto
     print(" --- debug -- bytes "+c[p+1]+" and "+c[p+2]+"")
-    var off = signed((c[p+1] << 8) + c[p+2])
+    var off = signed((c[p+1] << 8) | c[p+2])
+    if (off < 0) off = off + 1
     print(" --- debug -- offset "+off)
-    return off + p+1
+    return off + p
 }
 INST[0xa8] = function(c,p,s,cls,l) { // jsr
     print(" --- debug -- bytes "+c[p+1]+" and "+c[p+2]+"")
@@ -1323,30 +1324,41 @@ function runClass(cls) {
     // to run a class we need to find the public method Main with type
     //   ([Ljava/lang/String;)V
     // and run it
-    print(" --- debug -- running class "+cls.name)
     for (var i = 0; i < cls.methods.length; ++i) {
 	var m = cls.methods[i]
 	var locals = {0: ["array", {length: 0}]}
-	if ((m.name == "main") && (m.type == "([Ljava/lang/String;)V"))
+	if ((m.name == "main") && (m.type == "([Ljava/lang/String;)V")) {
+	    print(" --- running class "+cls.name)
 	    return runMethod(m, cls, locals)
+	}
     }
-    assert(1 == 2)
+    // assert(1 == 2)
 }
 
 try {
-   // var c = parseClass("Test2.class")
-    var names = ["ModTest", "TestStatic"]
-    for (var c =0; c < names.length; ++c ) {
-	parseClass(names[c]+".class")
+    var folder = new java.io.File(".")
+    var lf = folder.listFiles()
+    for (var i = 0; i < lf.length; ++i) {
+	if (lf[i].isFile()) {
+	    var name = lf[i].getName()
+	    if (name.match(/.class/))
+		parseClass(name)
+	    
+	}
     }
-    runClass(getCls("TestStatic"))
+    print(" --- debug -- read all classes")
+    for (var name in CLASSES) {
+	runClass(getCls(name))
+    }
 } catch(e) {
     if(e.rhinoException != null)
     {
+	print("Rhino ex:")
         e.rhinoException.printStackTrace();
     }
     else if(e.javaException != null)
     {
+	print("JVM ex:")
         e. javaException.printStackTrace();
     }
 
