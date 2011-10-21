@@ -1341,7 +1341,7 @@ try {
     }
     print(" --- debug -- read all classes")
     for (var name in CLASSES) {
-	java.lang.System.out.println(" --- trying to class "+name)
+	//java.lang.System.out.println(" --- trying to run class "+name)
 	runClass(getCls(name))
     }
 } catch(e) {
