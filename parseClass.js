@@ -1329,13 +1329,13 @@ function runClass(cls) {
 }
 
 try {
-    var folder = new java.io.File(".")
+    var folder = new java.io.File("classpath")
     var lf = folder.listFiles()
     for (var i = 0; i < lf.length; ++i) {
 	if (lf[i].isFile()) {
 	    var name = lf[i].getName()
 	    if (name.match(/.class/))
-		parseClass(name)
+		parseClass("classpath/"+name)
 	    
 	}
     }
